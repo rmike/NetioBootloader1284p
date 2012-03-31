@@ -1,0 +1,188 @@
+   1               		.file	"usart.c"
+   2               	__SREG__ = 0x3f
+   3               	__SP_H__ = 0x3e
+   4               	__SP_L__ = 0x3d
+   5               	__CCP__ = 0x34
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+  10               		.text
+  11               	.Ltext0:
+ 116               		.section	.text.usart_init,"ax",@progbits
+ 118               	.global	usart_init
+ 120               	usart_init:
+ 121               		.stabd	46,0,0
+   1:usart.c       **** /*----------------------------------------------------------------------------
+   2:usart.c       ****  Copyright:      Radig Ulrich  mailto: mail@ulrichradig.de
+   3:usart.c       ****  Author:         Radig Ulrich
+   4:usart.c       ****  Remarks:
+   5:usart.c       ****  known Problems: none
+   6:usart.c       ****  Version:        24.10.2007
+   7:usart.c       ****  Description:    RS232 Routinen
+   8:usart.c       **** 
+   9:usart.c       ****  Dieses Programm ist freie Software. Sie können es unter den Bedingungen der
+  10:usart.c       ****  GNU General Public License, wie von der Free Software Foundation veröffentlicht,
+  11:usart.c       ****  weitergeben und/oder modifizieren, entweder gemäß Version 2 der Lizenz oder
+  12:usart.c       ****  (nach Ihrer Option) jeder späteren Version.
+  13:usart.c       **** 
+  14:usart.c       ****  Die Veröffentlichung dieses Programms erfolgt in der Hoffnung,
+  15:usart.c       ****  daß es Ihnen von Nutzen sein wird, aber OHNE IRGENDEINE GARANTIE,
+  16:usart.c       ****  sogar ohne die implizite Garantie der MARKTREIFE oder der VERWENDBARKEIT
+  17:usart.c       ****  FÜR EINEN BESTIMMTEN ZWECK. Details finden Sie in der GNU General Public License.
+  18:usart.c       **** 
+  19:usart.c       ****  Sie sollten eine Kopie der GNU General Public License zusammen mit diesem
+  20:usart.c       ****  Programm erhalten haben.
+  21:usart.c       ****  Falls nicht, schreiben Sie an die Free Software Foundation,
+  22:usart.c       ****  Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
+  23:usart.c       **** ------------------------------------------------------------------------------*/
+  24:usart.c       **** #include "limits.h"
+  25:usart.c       **** #include "usart.h"
+  26:usart.c       **** #include "config.h"
+  27:usart.c       **** 
+  28:usart.c       **** //volatile unsigned int buffercounter = 0;
+  29:usart.c       **** 
+  30:usart.c       **** //char usart_rx_buffer[BUFFER_SIZE];
+  31:usart.c       **** //char *rx_buffer_pointer_in	= &usart_rx_buffer[0];
+  32:usart.c       **** //char *rx_buffer_pointer_out	= &usart_rx_buffer[0];
+  33:usart.c       **** 
+  34:usart.c       **** //----------------------------------------------------------------------------
+  35:usart.c       **** //Init serielle Schnittstelle
+  36:usart.c       **** //void usart_init(unsigned long baudrate)
+  37:usart.c       **** void usart_init(void)
+  38:usart.c       **** {
+ 123               	.LM0:
+ 124               	.LFBB1:
+ 125               	/* prologue: function */
+ 126               	/* frame size = 0 */
+ 127               	/* stack size = 0 */
+ 128               	.L__stack_usage = 0
+  39:usart.c       **** 	//Serielle Schnittstelle 1
+  40:usart.c       ****   	//Enable TXEN im Register UCR TX-Data Enable
+  41:usart.c       **** //	UCR =(1 << TXEN | 1 << RXEN | 1<< RXCIE);
+  42:usart.c       **** 	UCR =(1 << TXEN | 1 << RXEN);
+ 130               	.LM1:
+ 131 0000 88E1      		ldi r24,lo8(24)
+ 132 0002 8093 C100 		sts 193,r24
+  43:usart.c       **** 	// 0 = Parity Mode Disabled
+  44:usart.c       **** 	// 1 = Parity Mode Enabled, Even Parity
+  45:usart.c       **** 	// 2 = Parity Mode Enabled, Odd Parity
+  46:usart.c       **** 	//UCSRC = 0x06 + ((parity+1)<<4);
+  47:usart.c       **** 	//UCSRC |= (1<<USBS);
+  48:usart.c       **** 	//Teiler wird gesetzt
+  49:usart.c       **** //	UBRR=(F_CPU / (baudrate * 16L) - 1);
+  50:usart.c       **** 	UBRR=(F_CPU / (BAUDRATE * 16L) - 1);
+ 134               	.LM2:
+ 135 0006 87E6      		ldi r24,lo8(103)
+ 136 0008 8093 C400 		sts 196,r24
+ 137               	/* epilogue start */
+  51:usart.c       **** }
+ 139               	.LM3:
+ 140 000c 0895      		ret
+ 142               	.Lscope1:
+ 144               		.stabd	78,0,0
+ 145               		.section	.text.usart_write_char,"ax",@progbits
+ 148               	.global	usart_write_char
+ 150               	usart_write_char:
+ 151               		.stabd	46,0,0
+  52:usart.c       **** 
+  53:usart.c       **** //----------------------------------------------------------------------------
+  54:usart.c       **** //Routine für die Serielle Ausgabe eines Zeichens (Schnittstelle0)
+  55:usart.c       **** void usart_write_char(char c)
+  56:usart.c       **** {
+ 153               	.LM4:
+ 154               	.LFBB2:
+ 155               	/* prologue: function */
+ 156               	/* frame size = 0 */
+ 157               	/* stack size = 0 */
+ 158               	.L__stack_usage = 0
+ 159               	.L3:
+  57:usart.c       **** 	//Warten solange bis Zeichen gesendet wurde
+  58:usart.c       ****     while(!(USR & (1<<UDRE)));
+ 161               	.LM5:
+ 162 0000 9091 C000 		lds r25,192
+ 163 0004 95FF      		sbrs r25,5
+ 164 0006 00C0      		rjmp .L3
+  59:usart.c       ****     //Ausgabe des Zeichens
+  60:usart.c       ****     UDR = c;
+ 166               	.LM6:
+ 167 0008 8093 C600 		sts 198,r24
+ 168               	/* epilogue start */
+  61:usart.c       **** }
+ 170               	.LM7:
+ 171 000c 0895      		ret
+ 173               	.Lscope2:
+ 175               		.stabd	78,0,0
+ 176               		.section	.text.usart_write_str,"ax",@progbits
+ 178               	.global	usart_write_str
+ 180               	usart_write_str:
+ 181               		.stabd	46,0,0
+  62:usart.c       **** 
+  63:usart.c       **** //----------------------------------------------------------------------------
+  64:usart.c       **** //Ausgabe eines Strings
+  65:usart.c       **** void usart_write_str(char *str)
+  66:usart.c       **** {
+ 183               	.LM8:
+ 184               	.LFBB3:
+ 185 0000 EF92      		push r14
+ 186 0002 FF92      		push r15
+ 187 0004 CF93      		push r28
+ 188 0006 DF93      		push r29
+ 189               	/* prologue: function */
+ 190               	/* frame size = 0 */
+ 191               	/* stack size = 4 */
+ 192               	.L__stack_usage = 4
+ 194               	.LM9:
+ 195 0008 E82E      		mov r14,r24
+ 196 000a E701      		movw r28,r14
+ 197 000c 7E01      		movw r14,r28
+ 198 000e F92E      		mov r15,r25
+ 199 0010 E701      		movw r28,r14
+  67:usart.c       **** 	while (*str)
+ 201               	.LM10:
+ 202 0012 00C0      		rjmp .L6
+ 203               	.L7:
+  68:usart.c       **** 		usart_write_char(*str++);
+ 205               	.LM11:
+ 206 0014 0E94 0000 		call usart_write_char
+ 207               	.L6:
+  67:usart.c       **** 	while (*str)
+ 209               	.LM12:
+ 210 0018 8991      		ld r24,Y+
+ 211 001a 8823      		tst r24
+ 212 001c 01F4      		brne .L7
+ 213               	/* epilogue start */
+  69:usart.c       **** }
+ 215               	.LM13:
+ 216 001e DF91      		pop r29
+ 217 0020 CF91      		pop r28
+ 218 0022 FF90      		pop r15
+ 219 0024 EF90      		pop r14
+ 220 0026 0895      		ret
+ 222               	.Lscope3:
+ 224               		.stabd	78,0,0
+ 225               		.comm myip,4,1
+ 226               		.comm IP_id_counter,2,1
+ 227               		.comm eth_buffer,1201,1
+ 228               		.comm eth_len,2,1
+ 229               		.comm arp_entry,50,1
+ 235               		.text
+ 237               	.Letext0:
+ 238               	.global __do_clear_bss
+DEFINED SYMBOLS
+                            *ABS*:00000000 usart.c
+     /tmp/ccuCE7lb.s:2      *ABS*:0000003f __SREG__
+     /tmp/ccuCE7lb.s:3      *ABS*:0000003e __SP_H__
+     /tmp/ccuCE7lb.s:4      *ABS*:0000003d __SP_L__
+     /tmp/ccuCE7lb.s:5      *ABS*:00000034 __CCP__
+     /tmp/ccuCE7lb.s:6      *ABS*:00000000 __tmp_reg__
+     /tmp/ccuCE7lb.s:7      *ABS*:00000001 __zero_reg__
+     /tmp/ccuCE7lb.s:120    .text.usart_init:00000000 usart_init
+     /tmp/ccuCE7lb.s:150    .text.usart_write_char:00000000 usart_write_char
+     /tmp/ccuCE7lb.s:180    .text.usart_write_str:00000000 usart_write_str
+                            *COM*:00000004 myip
+                            *COM*:00000002 IP_id_counter
+                            *COM*:000004b1 eth_buffer
+                            *COM*:00000002 eth_len
+                            *COM*:00000032 arp_entry
+
+UNDEFINED SYMBOLS
+__do_clear_bss

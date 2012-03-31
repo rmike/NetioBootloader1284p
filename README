@@ -1,0 +1,71 @@
+http://www.mikrocontroller.net/topic/130969#1195588
+/*----------------------------------------------------------------------------
+ Copyright:      Jens Mundhenke
+ Author:         Jens Mundhenke
+ Remarks:
+ known Problems:
+ Version:        25.01.2009 for AVR-NET-IO
+ Description:    TFTP-Bootloader
+
+ Changes:        11.01.2012 Holger Klabunde
+                       Support for devices > 64kB
+                 31.03.2012 Michael Rakowski
+                       minimal changes to compile for 1284p (enc28j60.h)
+
+ Dieses Programm ist freie Software. Sie können es unter den Bedingungen der
+ GNU General Public License, wie von der Free Software Foundation veröffentlicht,
+ weitergeben und/oder modifizieren, entweder gemäß Version 2 der Lizenz oder
+ (nach Ihrer Option) jeder späteren Version.
+
+ Die Veröffentlichung dieses Programms erfolgt in der Hoffnung,
+ daß es Ihnen von Nutzen sein wird, aber OHNE IRGENDEINE GARANTIE,
+ sogar ohne die implizite Garantie der MARKTREIFE oder der VERWENDBARKEIT
+ FÜR EINEN BESTIMMTEN ZWECK. Details finden Sie in der GNU General Public License.
+
+ Sie sollten eine Kopie der GNU General Public License zusammen mit diesem
+ Programm erhalten haben.
+ Falls nicht, schreiben Sie an die Free Software Foundation,
+ Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
+----------------------------------------------------------------------------*/
+
+This project implements a bootloader for using TFTP transfer.
+
+The code is stored in the boot flash section of the AVR. It needs
+the maximum size of 8k bytes of this section. Due to the limited space
+Debug-Outputs can not be enabled globally.
+
+The loader can either be called by a jump to
+
+ 64kB devices 		0xe000  (0x7000 in a C function call)
+128kB devices 		0x1e000 (0xF000 in a C function call)
+256kB devices 		0x3e000 (0x1F000 in a C function call)
+
+when needed or after every reset by settig the BOOTRST fuse to 0. While flashing
+this bootloader the program flash is deleted. A reset after flashing will start
+the loader even if BOOTRST is not active because the empty program space is
+filled with NOPs.
+
+All parameters of the IP connection (own IP/Mask/Gateway, TFTP-server and
+filename) are stored in the EEPROM. If you start with an empty EEPROM,
+default values defined in config.h will be used. The positions of data
+in EEPROM are the same in Ulrich Radig's webserver. The output of the loader#
+can be sent using syslog and/or usart. See para.h.
+
+The makefile sets the fuses as needed for the loader. Don't forget to set
+the BOOTSZ-fuses in your project to 4K words (if you change fuses while
+programming your project).
+
+The program is based on the work of Ulrich Radig. His IP stack used in
+his webserver was easy to understand and to simplify to meet the needs
+of this project. Danke, Ulrich!
+
+I'm using the 3CDAEMON as TFTP and SYSLOG server. TFTP is also tested with
+tftpd32. All tests were done in a LAN, the TFTP download may not work on
+WAN connections.
+
+Jens Mundhenke
+jens (at) mundhenke.info
+
+
+Remarks:
+ - The loader will never work on ATmega32, the boot flash section is to small.

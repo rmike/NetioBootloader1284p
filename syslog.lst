@@ -1,0 +1,222 @@
+   1               		.file	"syslog.c"
+   2               	__SREG__ = 0x3f
+   3               	__SP_H__ = 0x3e
+   4               	__SP_L__ = 0x3d
+   5               	__CCP__ = 0x34
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+  10               		.text
+  11               	.Ltext0:
+ 114               		.section	.text.syslog_send,"ax",@progbits
+ 117               	.global	syslog_send
+ 119               	syslog_send:
+ 120               		.stabd	46,0,0
+   1:syslog.c      **** /*----------------------------------------------------------------------------
+   2:syslog.c      ****  Copyright:      Jens Mundhenke
+   3:syslog.c      ****  Author:         Jens Mundhenke
+   4:syslog.c      ****  Remarks:		 Used on the IP-stack of Ulrich Radig
+   5:syslog.c      ****   known Problems:
+   6:syslog.c      ****  Version:        18.01.2009
+   7:syslog.c      ****  Description:    Sending syslog-Messages
+   8:syslog.c      **** 
+   9:syslog.c      ****  This module interprets a stream of intel hex information and flashes it
+  10:syslog.c      ****  to the programm store.
+  11:syslog.c      **** 
+  12:syslog.c      ****  Dieses Programm ist freie Software. Sie können es unter den Bedingungen der
+  13:syslog.c      ****  GNU General Public License, wie von der Free Software Foundation veröffentlicht,
+  14:syslog.c      ****  weitergeben und/oder modifizieren, entweder gemäß Version 2 der Lizenz oder
+  15:syslog.c      ****  (nach Ihrer Option) jeder späteren Version.
+  16:syslog.c      **** 
+  17:syslog.c      ****  Die Veröffentlichung dieses Programms erfolgt in der Hoffnung,
+  18:syslog.c      ****  daß es Ihnen von Nutzen sein wird, aber OHNE IRGENDEINE GARANTIE,
+  19:syslog.c      ****  sogar ohne die implizite Garantie der MARKTREIFE oder der VERWENDBARKEIT
+  20:syslog.c      ****  FÜR EINEN BESTIMMTEN ZWECK. Details finden Sie in der GNU General Public License.
+  21:syslog.c      **** 
+  22:syslog.c      ****  Sie sollten eine Kopie der GNU General Public License zusammen mit diesem
+  23:syslog.c      ****  Programm erhalten haben.
+  24:syslog.c      ****  Falls nicht, schreiben Sie an die Free Software Foundation,
+  25:syslog.c      ****  Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
+  26:syslog.c      **** ----------------------------------------------------------------------------*/
+  27:syslog.c      **** #include <stdlib.h>
+  28:syslog.c      **** #include "config.h"
+  29:syslog.c      **** #include "console.h"
+  30:syslog.c      **** #include "usart.h"
+  31:syslog.c      **** #include "syslog.h"
+  32:syslog.c      **** #include "stack.h"
+  33:syslog.c      **** #include "para.h"
+  34:syslog.c      **** 
+  35:syslog.c      **** #if USE_SYSLOG
+  36:syslog.c      **** 
+  37:syslog.c      **** //#define SYSLOG_DEBUG	DEBUG_WRITE
+  38:syslog.c      **** #define SYSLOG_DEBUG(...)
+  39:syslog.c      **** //#define SYSLOG_ERROR	DEBUG_WRITE
+  40:syslog.c      **** #define SYSLOG_ERROR(...)
+  41:syslog.c      **** 
+  42:syslog.c      **** unsigned char syslog_server_ip[4];	// IP address of the server, set by default in config.h
+  43:syslog.c      **** 									// or from EEPROM
+  44:syslog.c      **** 
+  45:syslog.c      **** 
+  46:syslog.c      **** //-----------------------------------------------------------------------------------
+  47:syslog.c      **** // sending msg to syslog server defined in EEPROM
+  48:syslog.c      **** void syslog_send ( char *msg )
+  49:syslog.c      **** {
+ 122               	.LM0:
+ 123               	.LFBB1:
+ 124 0000 CF92      		push r12
+ 125 0002 DF92      		push r13
+ 126 0004 EF92      		push r14
+ 127 0006 FF92      		push r15
+ 128 0008 0F93      		push r16
+ 129 000a 1F93      		push r17
+ 130 000c CF93      		push r28
+ 131 000e DF93      		push r29
+ 132               	/* prologue: function */
+ 133               	/* frame size = 0 */
+ 134               	/* stack size = 8 */
+ 135               	.L__stack_usage = 8
+ 136 0010 6C01      		movw r12,r24
+  50:syslog.c      **** 	char *packet = (char *)(eth_buffer+UDP_DATA_START);
+  51:syslog.c      **** 	char *pp = packet;
+  52:syslog.c      **** 	int i = 0;
+  53:syslog.c      **** 
+  54:syslog.c      **** 	SYSLOG_DEBUG("SYSLOG send %s\r\n", msg);
+  55:syslog.c      **** 
+  56:syslog.c      **** 	(*((unsigned long*)&syslog_server_ip[0])) = para_getip(SYSLOG_IP_EEPROM_STORE,SYSLOG_IP);
+ 138               	.LM1:
+ 139 0012 80E5      		ldi r24,lo8(80)
+ 140 0014 90E0      		ldi r25,hi8(80)
+ 141 0016 40EC      		ldi r20,lo8(-2013157184)
+ 142 0018 58EA      		ldi r21,hi8(-2013157184)
+ 143 001a 61E0      		ldi r22,hlo8(-2013157184)
+ 144 001c 78E8      		ldi r23,hhi8(-2013157184)
+ 145 001e 0E94 0000 		call para_getip
+ 146 0022 7B01      		movw r14,r22
+ 147 0024 8C01      		movw r16,r24
+ 148 0026 6093 0000 		sts syslog_server_ip,r22
+ 149 002a 7093 0000 		sts syslog_server_ip+1,r23
+ 150 002e 8093 0000 		sts syslog_server_ip+2,r24
+ 151 0032 9093 0000 		sts syslog_server_ip+3,r25
+  57:syslog.c      **** 	SYSLOG_DEBUG("Server: %1i.%1i.%1i.%1i\r\n",syslog_server_ip[0],syslog_server_ip[1],syslog_server_i
+  58:syslog.c      **** 
+  59:syslog.c      **** 	//Arp-Request senden
+  60:syslog.c      **** 	unsigned long tmp_ip = (*(unsigned long*)&syslog_server_ip[0]);
+  61:syslog.c      **** 	if ( syslog_server_ip[3] != 0xFF )	// quickhack for broadcast address
+ 153               	.LM2:
+ 154 0036 8091 0000 		lds r24,syslog_server_ip+3
+ 155 003a 8F3F      		cpi r24,lo8(-1)
+ 156 003c 01F0      		breq .L2
+  62:syslog.c      **** 		if ( arp_entry_search(tmp_ip) >= MAX_ARP_ENTRY ) //Arp-Request senden?
+ 158               	.LM3:
+ 159 003e C801      		movw r24,r16
+ 160 0040 B701      		movw r22,r14
+ 161 0042 0E94 0000 		call arp_entry_search
+ 162 0046 8530      		cpi r24,lo8(5)
+ 163 0048 00F4      		brsh .L3
+ 164 004a 00C0      		rjmp .L2
+ 165               	.L5:
+ 167               	.LM4:
+ 168 004c 2197      		sbiw r28,1
+  63:syslog.c      **** 			for ( i=0; i<SYSLOG_ARPRETRIES && (arp_request(tmp_ip) != 1); i++ );
+ 170               	.LM5:
+ 171 004e 01F4      		brne .L4
+ 172 0050 00C0      		rjmp .L2
+ 173               	.L3:
+  62:syslog.c      **** 		if ( arp_entry_search(tmp_ip) >= MAX_ARP_ENTRY ) //Arp-Request senden?
+ 175               	.LM6:
+ 176 0052 C3E0      		ldi r28,lo8(3)
+ 177 0054 D0E0      		ldi r29,hi8(3)
+ 178               	.L4:
+ 180               	.LM7:
+ 181 0056 C801      		movw r24,r16
+ 182 0058 B701      		movw r22,r14
+ 183 005a 0E94 0000 		call arp_request
+ 184 005e 8130      		cpi r24,lo8(1)
+ 185 0060 01F4      		brne .L5
+ 186               	.L2:
+  64:syslog.c      **** 
+  65:syslog.c      **** 	if (i>=SYSLOG_ARPRETRIES) {
+  66:syslog.c      **** 	  SYSLOG_ERROR("No SYSLOG server!\r\n");
+  67:syslog.c      **** 	}
+  68:syslog.c      **** 
+  69:syslog.c      **** 	// building the packet structure
+  70:syslog.c      **** 	*pp++ = '<';
+ 188               	.LM8:
+ 189 0062 C0E0      		ldi r28,lo8(eth_buffer+42)
+ 190 0064 D0E0      		ldi r29,hi8(eth_buffer+42)
+ 191 0066 8CE3      		ldi r24,lo8(60)
+ 192 0068 8093 0000 		sts eth_buffer+42,r24
+  71:syslog.c      **** 	*pp++ = '0';
+ 194               	.LM9:
+ 195 006c 80E3      		ldi r24,lo8(48)
+ 196 006e 8093 0000 		sts eth_buffer+43,r24
+  72:syslog.c      **** 	*pp++ = '>';
+ 198               	.LM10:
+ 199 0072 8EE3      		ldi r24,lo8(62)
+ 200 0074 8093 0000 		sts eth_buffer+44,r24
+  73:syslog.c      **** 	strcpy ( pp, msg );
+ 202               	.LM11:
+ 203 0078 CE01      		movw r24,r28
+ 204 007a 0396      		adiw r24,3
+ 205 007c B601      		movw r22,r12
+ 206 007e 0E94 0000 		call strcpy
+  74:syslog.c      **** 	create_new_udp_packet(strlen(packet),SYSLOG_CLIENT_PORT,SYSLOG_SERVER_PORT,tmp_ip);
+ 208               	.LM12:
+ 209 0082 0990      		ld __tmp_reg__,Y+
+ 210 0084 0020      		tst __tmp_reg__
+ 211 0086 01F4      		brne .-6
+ 212 0088 CE01      		movw r24,r28
+ 213 008a 8050      		subi r24,lo8(eth_buffer+43)
+ 214 008c 9040      		sbci r25,hi8(eth_buffer+43)
+ 215 008e 62E1      		ldi r22,lo8(-23022)
+ 216 0090 76EA      		ldi r23,hi8(-23022)
+ 217 0092 42E0      		ldi r20,lo8(514)
+ 218 0094 52E0      		ldi r21,hi8(514)
+ 219 0096 9801      		movw r18,r16
+ 220 0098 8701      		movw r16,r14
+ 221 009a 0E94 0000 		call create_new_udp_packet
+ 222               	/* epilogue start */
+  75:syslog.c      **** }
+ 224               	.LM13:
+ 225 009e DF91      		pop r29
+ 226 00a0 CF91      		pop r28
+ 227 00a2 1F91      		pop r17
+ 228 00a4 0F91      		pop r16
+ 229 00a6 FF90      		pop r15
+ 230 00a8 EF90      		pop r14
+ 231 00aa DF90      		pop r13
+ 232 00ac CF90      		pop r12
+ 233 00ae 0895      		ret
+ 235               	.Lscope1:
+ 237               		.stabd	78,0,0
+ 238               		.comm myip,4,1
+ 239               		.comm IP_id_counter,2,1
+ 240               		.comm eth_buffer,1201,1
+ 241               		.comm eth_len,2,1
+ 242               		.comm arp_entry,50,1
+ 243               		.comm syslog_server_ip,4,1
+ 250               		.text
+ 252               	.Letext0:
+ 253               	.global __do_clear_bss
+DEFINED SYMBOLS
+                            *ABS*:00000000 syslog.c
+     /tmp/ccOqSz77.s:2      *ABS*:0000003f __SREG__
+     /tmp/ccOqSz77.s:3      *ABS*:0000003e __SP_H__
+     /tmp/ccOqSz77.s:4      *ABS*:0000003d __SP_L__
+     /tmp/ccOqSz77.s:5      *ABS*:00000034 __CCP__
+     /tmp/ccOqSz77.s:6      *ABS*:00000000 __tmp_reg__
+     /tmp/ccOqSz77.s:7      *ABS*:00000001 __zero_reg__
+     /tmp/ccOqSz77.s:119    .text.syslog_send:00000000 syslog_send
+                            *COM*:00000004 syslog_server_ip
+                            *COM*:000004b1 eth_buffer
+                            *COM*:00000004 myip
+                            *COM*:00000002 IP_id_counter
+                            *COM*:00000002 eth_len
+                            *COM*:00000032 arp_entry
+
+UNDEFINED SYMBOLS
+para_getip
+arp_entry_search
+arp_request
+strcpy
+create_new_udp_packet
+__do_clear_bss

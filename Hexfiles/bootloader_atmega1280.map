@@ -1,0 +1,995 @@
+Archive member included because of file (symbol)
+
+/usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_exit.o)
+                              /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o (exit)
+/usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_copy_data.o)
+                              main.o (__do_copy_data)
+/usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_clear_bss.o)
+                              main.o (__do_clear_bss)
+/usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(toupper.o)
+                              bootloader/ihex.o (toupper)
+/usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(strcpy.o)
+                              para.o (strcpy)
+/usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(itoa.o)
+                              console.o (itoa)
+/usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(utoa.o)
+                              console.o (utoa)
+/usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(eerd_byte_atmega1280.o)
+                              para.o (__eerd_byte_m1280)
+/usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(strrev.o)
+                              /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(itoa.o) (strrev)
+/usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_udivmodhi4.o)
+                              /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(itoa.o) (__udivmodhi4)
+
+Allocating common symbols
+Common symbol       size              file
+
+console_mode        0x2               console.o
+ihex_len            0x1               bootloader/ihex.o
+tftp_server_ip      0x4               bootloader/tftp.o
+syslog_server_ip    0x4               syslog.o
+eth_buffer          0x4b1             main.o
+ihex_dataidx        0x2               bootloader/ihex.o
+arp_entry           0x32              main.o
+console_tx_buffer   0x3d              console.o
+myip                0x4               main.o
+ihex_addr           0x2               bootloader/ihex.o
+ihex_data           0x10              bootloader/ihex.o
+ihex_checksum       0x1               bootloader/ihex.o
+ihex_type           0x1               bootloader/ihex.o
+eth_len             0x2               main.o
+ihex_addrbyte       0x1               bootloader/ihex.o
+ihex_addr_offset    0x4               bootloader/ihex.o
+cm                  0x2               console.o
+enc28j60_current_bank
+                    0x1               networkcard/enc28j60.o
+ihex_check          0x1               bootloader/ihex.o
+enc28j60_next_packet_ptr
+                    0x2               networkcard/enc28j60.o
+
+Discarded input sections
+
+ .data          0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+ .bss           0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+ .text          0x00000000        0x0 main.o
+ .bss           0x00000000        0x0 main.o
+ .text          0x00000000        0x0 stack.o
+ .data          0x00000000        0x0 stack.o
+ .text          0x00000000        0x0 timer.o
+ .data          0x00000000        0x0 timer.o
+ .bss           0x00000000        0x0 timer.o
+ .text          0x00000000        0x0 para.o
+ .data          0x00000000        0x0 para.o
+ .bss           0x00000000        0x0 para.o
+ .text          0x00000000        0x0 console.o
+ .data          0x00000000        0x0 console.o
+ .text          0x00000000        0x0 syslog.o
+ .data          0x00000000        0x0 syslog.o
+ .bss           0x00000000        0x0 syslog.o
+ .text          0x00000000        0x0 usart.o
+ .data          0x00000000        0x0 usart.o
+ .bss           0x00000000        0x0 usart.o
+ .text.usart_write_str
+                0x00000000       0x28 usart.o
+ .text          0x00000000        0x0 networkcard/enc28j60.o
+ .bss           0x00000000        0x0 networkcard/enc28j60.o
+ .text.enc28j60_read_phy
+                0x00000000       0x50 networkcard/enc28j60.o
+ .text          0x00000000        0x0 networkcard/rtl8019.o
+ .data          0x00000000        0x0 networkcard/rtl8019.o
+ .bss           0x00000000        0x0 networkcard/rtl8019.o
+ .text          0x00000000        0x0 bootloader/tftp.o
+ .text.tftp_watchdogrestart
+                0x00000000        0xe bootloader/tftp.o
+ .text          0x00000000        0x0 bootloader/ihex.o
+ .bss           0x00000000        0x0 bootloader/ihex.o
+ .text          0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_exit.o)
+ .data          0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_exit.o)
+ .bss           0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_exit.o)
+ .text.libgcc   0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_exit.o)
+ .text          0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_copy_data.o)
+ .data          0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_copy_data.o)
+ .bss           0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_copy_data.o)
+ .text.libgcc   0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_copy_data.o)
+ .text          0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_clear_bss.o)
+ .data          0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_clear_bss.o)
+ .bss           0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_clear_bss.o)
+ .text.libgcc   0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_clear_bss.o)
+ .text          0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(toupper.o)
+ .data          0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(toupper.o)
+ .bss           0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(toupper.o)
+ .text          0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(strcpy.o)
+ .data          0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(strcpy.o)
+ .bss           0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(strcpy.o)
+ .text          0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(itoa.o)
+ .data          0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(itoa.o)
+ .bss           0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(itoa.o)
+ .text          0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(utoa.o)
+ .data          0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(utoa.o)
+ .bss           0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(utoa.o)
+ .text          0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(eerd_byte_atmega1280.o)
+ .data          0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(eerd_byte_atmega1280.o)
+ .bss           0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(eerd_byte_atmega1280.o)
+ .text          0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(strrev.o)
+ .data          0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(strrev.o)
+ .bss           0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(strrev.o)
+ .text          0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_udivmodhi4.o)
+ .data          0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_udivmodhi4.o)
+ .bss           0x00000000        0x0 /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_udivmodhi4.o)
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+text             0x00000000         0x00020000         xr
+data             0x00800100         0x0000ff00         rw !x
+eeprom           0x00810000         0x00010000         rw !x
+fuse             0x00820000         0x00000400         rw !x
+lock             0x00830000         0x00000400         rw !x
+signature        0x00840000         0x00000400         rw !x
+*default*        0x00000000         0xffffffff
+
+Linker script and memory map
+
+Address of section .data set to 0x800200
+LOAD /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+LOAD main.o
+LOAD stack.o
+LOAD timer.o
+LOAD para.o
+LOAD console.o
+LOAD syslog.o
+LOAD usart.o
+LOAD networkcard/enc28j60.o
+LOAD networkcard/rtl8019.o
+LOAD bootloader/tftp.o
+LOAD bootloader/ihex.o
+Address of section .text set to 0x1e000
+LOAD /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a
+LOAD /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a
+LOAD /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a
+
+.hash
+ *(.hash)
+
+.dynsym
+ *(.dynsym)
+
+.dynstr
+ *(.dynstr)
+
+.gnu.version
+ *(.gnu.version)
+
+.gnu.version_d
+ *(.gnu.version_d)
+
+.gnu.version_r
+ *(.gnu.version_r)
+
+.rel.init
+ *(.rel.init)
+
+.rela.init
+ *(.rela.init)
+
+.rel.text
+ *(.rel.text)
+ *(.rel.text.*)
+ *(.rel.gnu.linkonce.t*)
+
+.rela.text
+ *(.rela.text)
+ *(.rela.text.*)
+ *(.rela.gnu.linkonce.t*)
+
+.rel.fini
+ *(.rel.fini)
+
+.rela.fini
+ *(.rela.fini)
+
+.rel.rodata
+ *(.rel.rodata)
+ *(.rel.rodata.*)
+ *(.rel.gnu.linkonce.r*)
+
+.rela.rodata
+ *(.rela.rodata)
+ *(.rela.rodata.*)
+ *(.rela.gnu.linkonce.r*)
+
+.rel.data
+ *(.rel.data)
+ *(.rel.data.*)
+ *(.rel.gnu.linkonce.d*)
+
+.rela.data
+ *(.rela.data)
+ *(.rela.data.*)
+ *(.rela.gnu.linkonce.d*)
+
+.rel.ctors
+ *(.rel.ctors)
+
+.rela.ctors
+ *(.rela.ctors)
+
+.rel.dtors
+ *(.rel.dtors)
+
+.rela.dtors
+ *(.rela.dtors)
+
+.rel.got
+ *(.rel.got)
+
+.rela.got
+ *(.rela.got)
+
+.rel.bss
+ *(.rel.bss)
+
+.rela.bss
+ *(.rela.bss)
+
+.rel.plt
+ *(.rel.plt)
+
+.rela.plt
+ *(.rela.plt)
+
+.text           0x0001e000     0x19f0
+ *(.vectors)
+ .vectors       0x0001e000       0xe4 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+                0x0001e000                __vectors
+                0x0001e000                __vector_default
+ *(.vectors)
+ *(.progmem.gcc*)
+ *(.progmem*)
+                0x0001e0e4                . = ALIGN (0x2)
+                0x0001e0e4                __trampolines_start = .
+ *(.trampolines)
+ .trampolines   0x0001e0e4        0x0 linker stubs
+ *(.trampolines*)
+                0x0001e0e4                __trampolines_end = .
+ *(.jumptables)
+ *(.jumptables*)
+ *(.lowtext)
+ *(.lowtext*)
+                0x0001e0e4                __ctors_start = .
+ *(.ctors)
+                0x0001e0e4                __ctors_end = .
+                0x0001e0e4                __dtors_start = .
+ *(.dtors)
+                0x0001e0e4                __dtors_end = .
+ SORT(*)(.ctors)
+ SORT(*)(.dtors)
+ *(.init0)
+ .init0         0x0001e0e4        0x0 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+                0x0001e0e4                __init
+ *(.init0)
+ *(.init1)
+ .init1         0x0001e0e4       0x12 main.o
+                0x0001e0e4                wdt_init
+ *(.init1)
+ *(.init2)
+ .init2         0x0001e0f6        0xc /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+ *(.init2)
+ *(.init3)
+ *(.init3)
+ *(.init4)
+ .init4         0x0001e102       0x1a /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_copy_data.o)
+                0x0001e102                __do_copy_data
+ .init4         0x0001e11c       0x10 /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_clear_bss.o)
+                0x0001e11c                __do_clear_bss
+ *(.init4)
+ *(.init5)
+ *(.init5)
+ *(.init6)
+ *(.init6)
+ *(.init7)
+ *(.init7)
+ *(.init8)
+ *(.init8)
+ *(.init9)
+ .init9         0x0001e12c        0x6 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+ *(.init9)
+ *(.text)
+ .text          0x0001e132        0x2 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+                0x0001e132                __vector_38
+                0x0001e132                __vector_22
+                0x0001e132                __vector_28
+                0x0001e132                __vector_1
+                0x0001e132                __vector_32
+                0x0001e132                __vector_34
+                0x0001e132                __vector_24
+                0x0001e132                __vector_12
+                0x0001e132                __vector_55
+                0x0001e132                __vector_46
+                0x0001e132                __bad_interrupt
+                0x0001e132                __vector_6
+                0x0001e132                __vector_31
+                0x0001e132                __vector_35
+                0x0001e132                __vector_39
+                0x0001e132                __vector_3
+                0x0001e132                __vector_23
+                0x0001e132                __vector_30
+                0x0001e132                __vector_45
+                0x0001e132                __vector_25
+                0x0001e132                __vector_11
+                0x0001e132                __vector_54
+                0x0001e132                __vector_13
+                0x0001e132                __vector_19
+                0x0001e132                __vector_56
+                0x0001e132                __vector_7
+                0x0001e132                __vector_49
+                0x0001e132                __vector_41
+                0x0001e132                __vector_43
+                0x0001e132                __vector_27
+                0x0001e132                __vector_5
+                0x0001e132                __vector_33
+                0x0001e132                __vector_47
+                0x0001e132                __vector_52
+                0x0001e132                __vector_37
+                0x0001e132                __vector_4
+                0x0001e132                __vector_44
+                0x0001e132                __vector_51
+                0x0001e132                __vector_9
+                0x0001e132                __vector_2
+                0x0001e132                __vector_21
+                0x0001e132                __vector_15
+                0x0001e132                __vector_36
+                0x0001e132                __vector_29
+                0x0001e132                __vector_40
+                0x0001e132                __vector_8
+                0x0001e132                __vector_26
+                0x0001e132                __vector_48
+                0x0001e132                __vector_14
+                0x0001e132                __vector_53
+                0x0001e132                __vector_10
+                0x0001e132                __vector_50
+                0x0001e132                __vector_16
+                0x0001e132                __vector_18
+                0x0001e132                __vector_20
+                0x0001e132                __vector_42
+                0x0001e134                . = ALIGN (0x2)
+ *(.text.*)
+ .text.main     0x0001e134       0x38 main.o
+                0x0001e134                main
+ .text.stack_init
+                0x0001e16c       0x6c stack.o
+                0x0001e16c                stack_init
+ .text.arp_entry_add
+                0x0001e1d8      0x158 stack.o
+                0x0001e1d8                arp_entry_add
+ .text.arp_entry_search
+                0x0001e330       0x24 stack.o
+                0x0001e330                arp_entry_search
+ .text.new_eth_header
+                0x0001e354       0x7e stack.o
+                0x0001e354                new_eth_header
+ .text.arp_reply
+                0x0001e3d2      0x150 stack.o
+                0x0001e3d2                arp_reply
+ .text.checksum
+                0x0001e522       0x96 stack.o
+                0x0001e522                checksum
+ .text.make_ip_header
+                0x0001e5b8       0xa2 stack.o
+                0x0001e5b8                make_ip_header
+ .text.udp_socket_process
+                0x0001e65a       0x20 stack.o
+                0x0001e65a                udp_socket_process
+ .text.check_packet
+                0x0001e67a       0x50 stack.o
+                0x0001e67a                check_packet
+ .text.eth_get_data
+                0x0001e6ca       0x24 stack.o
+                0x0001e6ca                eth_get_data
+ .text.arp_request
+                0x0001e6ee       0xe4 stack.o
+                0x0001e6ee                arp_request
+ .text.create_new_udp_packet
+                0x0001e7d2       0xce stack.o
+                0x0001e7d2                create_new_udp_packet
+ .text.timer_init
+                0x0001e8a0       0x2a timer.o
+                0x0001e8a0                timer_init
+ .text.__vector_17
+                0x0001e8ca       0x3e timer.o
+                0x0001e8ca                __vector_17
+ .text.para_getip
+                0x0001e908       0x96 para.o
+                0x0001e908                para_getip
+ .text.para_getstring
+                0x0001e99e       0x94 para.o
+                0x0001e99e                para_getstring
+ .text.para_getchar
+                0x0001ea32        0x4 para.o
+                0x0001ea32                para_getchar
+ .text.console_init
+                0x0001ea36       0x12 console.o
+                0x0001ea36                console_init
+ .text.console_flush
+                0x0001ea48       0x2c console.o
+                0x0001ea48                console_flush
+ .text.console_write_char
+                0x0001ea74       0x56 console.o
+                0x0001ea74                console_write_char
+ .text.console_write_str
+                0x0001eaca       0x2a console.o
+                0x0001eaca                console_write_str
+ .text.console_write_P
+                0x0001eaf4      0x158 console.o
+                0x0001eaf4                console_write_P
+ .text.syslog_send
+                0x0001ec4c       0xa6 syslog.o
+                0x0001ec4c                syslog_send
+ .text.usart_init
+                0x0001ecf2        0xe usart.o
+                0x0001ecf2                usart_init
+ .text.usart_write_char
+                0x0001ed00        0xe usart.o
+                0x0001ed00                usart_write_char
+ .text.enc28j60_read_buffer
+                0x0001ed0e       0x2a networkcard/enc28j60.o
+                0x0001ed0e                enc28j60_read_buffer
+ .text.enc28j60_write_buffer
+                0x0001ed38       0x26 networkcard/enc28j60.o
+                0x0001ed38                enc28j60_write_buffer
+ .text.enc28j60_spi_read_byte
+                0x0001ed5e       0x2a networkcard/enc28j60.o
+                0x0001ed5e                enc28j60_spi_read_byte
+ .text.enc28j60_spi_write_word
+                0x0001ed88       0x16 networkcard/enc28j60.o
+                0x0001ed88                enc28j60_spi_write_word
+ .text.enc28j60_write_address
+                0x0001ed9e       0x42 networkcard/enc28j60.o
+                0x0001ed9e                enc28j60_write_address
+ .text.enc28j60_read_address
+                0x0001ede0       0x42 networkcard/enc28j60.o
+                0x0001ede0                enc28j60_read_address
+ .text.enc28j60_write_phy
+                0x0001ee22       0x38 networkcard/enc28j60.o
+                0x0001ee22                enc28j60_write_phy
+ .text.enc28j60_receive_packet
+                0x0001ee5a       0xe0 networkcard/enc28j60.o
+                0x0001ee5a                enc28j60_receive_packet
+ .text.enc28j60_send_packet
+                0x0001ef3a       0x80 networkcard/enc28j60.o
+                0x0001ef3a                enc28j60_send_packet
+ .text.enc28j60_init
+                0x0001efba       0xc2 networkcard/enc28j60.o
+                0x0001efba                enc28j60_init
+ .text.tftp_init
+                0x0001f07c       0x18 bootloader/tftp.o
+                0x0001f07c                tftp_init
+ .text.tftp_request
+                0x0001f094      0x1c2 bootloader/tftp.o
+                0x0001f094                tftp_request
+ .text.tftp_ack
+                0x0001f256       0x4e bootloader/tftp.o
+                0x0001f256                tftp_ack
+ .text.tftp_get
+                0x0001f2a4      0x1fc bootloader/tftp.o
+                0x0001f2a4                tftp_get
+ .text.tftp_watchdogcheck
+                0x0001f4a0       0x2e bootloader/tftp.o
+                0x0001f4a0                tftp_watchdogcheck
+ .text.ihex_intvector
+                0x0001f4ce       0x18 bootloader/ihex.o
+                0x0001f4ce                ihex_intvector
+ .text.ihex_appstart
+                0x0001f4e6       0x2e bootloader/ihex.o
+                0x0001f4e6                ihex_appstart
+ .text.ihex_ascii2val
+                0x0001f514        0xc bootloader/ihex.o
+                0x0001f514                ihex_ascii2val
+ .text.ihex_init
+                0x0001f520        0x8 bootloader/ihex.o
+                0x0001f520                ihex_init
+ .text.ihex_program
+                0x0001f528      0x104 bootloader/ihex.o
+                0x0001f528                ihex_program
+ .text.ihex_flash
+                0x0001f62c      0x2e4 bootloader/ihex.o
+                0x0001f62c                ihex_flash
+ .text.avr-libc
+                0x0001f910       0x10 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(toupper.o)
+                0x0001f910                toupper
+ .text.avr-libc
+                0x0001f920        0xe /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(strcpy.o)
+                0x0001f920                strcpy
+ .text.avr-libc
+                0x0001f92e       0x3e /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(itoa.o)
+                0x0001f92e                itoa
+ .text.avr-libc
+                0x0001f96c       0x28 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(utoa.o)
+                0x0001f96c                utoa
+ .text.avr-libc
+                0x0001f994       0x10 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(eerd_byte_atmega1280.o)
+                0x0001f994                __eerd_byte_m1280
+ .text.avr-libc
+                0x0001f9a4       0x20 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(strrev.o)
+                0x0001f9a4                strrev
+ .text.libgcc   0x0001f9c4       0x28 /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_udivmodhi4.o)
+                0x0001f9c4                __udivmodhi4
+                0x0001f9ec                . = ALIGN (0x2)
+ *(.fini9)
+ .fini9         0x0001f9ec        0x0 /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_exit.o)
+                0x0001f9ec                exit
+                0x0001f9ec                _exit
+ *(.fini9)
+ *(.fini8)
+ *(.fini8)
+ *(.fini7)
+ *(.fini7)
+ *(.fini6)
+ *(.fini6)
+ *(.fini5)
+ *(.fini5)
+ *(.fini4)
+ *(.fini4)
+ *(.fini3)
+ *(.fini3)
+ *(.fini2)
+ *(.fini2)
+ *(.fini1)
+ *(.fini1)
+ *(.fini0)
+ .fini0         0x0001f9ec        0x4 /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_exit.o)
+ *(.fini0)
+                0x0001f9f0                _etext = .
+
+.data           0x00800200       0xb6 load address 0x0001f9f0
+                0x00800200                PROVIDE (__data_start, .)
+ *(.data)
+ .data          0x00800200        0x9 main.o
+ .data          0x00800209       0x2c networkcard/enc28j60.o
+                0x00800209                mymac
+                0x0080020f                enc28j60_config
+                0x0080022f                enc28j60_macaddr
+ .data          0x00800235       0x7e bootloader/tftp.o
+                0x008002b1                tftp_watchdog
+ .data          0x008002b3        0x3 bootloader/ihex.o
+                0x008002b3                ihex_lastpage
+                0x008002b5                ihex_linestate
+ *(.data*)
+ *(.rodata)
+ *(.rodata*)
+ *(.gnu.linkonce.d*)
+                0x008002b6                . = ALIGN (0x2)
+                0x008002b6                _edata = .
+                0x008002b6                PROVIDE (__data_end, .)
+
+.bss            0x008002b6      0x559
+                0x008002b6                PROVIDE (__bss_start, .)
+ *(.bss)
+ .bss           0x008002b6        0x2 stack.o
+                0x008002b6                IP_id_counter
+ .bss           0x008002b8        0x3 console.o
+                0x008002b8                console_tx_counter
+                0x008002ba                console_isinit
+ .bss           0x008002bb        0x2 bootloader/tftp.o
+                0x008002bb                tftp_block
+ *(.bss*)
+ *(COMMON)
+ COMMON         0x008002bd      0x4e9 main.o
+                0x008002bd                eth_buffer
+                0x0080076e                arp_entry
+                0x008007a0                myip
+                0x008007a4                eth_len
+ COMMON         0x008007a6       0x41 console.o
+                0x008007a6                console_mode
+                0x008007a8                console_tx_buffer
+                0x008007e5                cm
+ COMMON         0x008007e7        0x4 syslog.o
+                0x008007e7                syslog_server_ip
+ COMMON         0x008007eb        0x3 networkcard/enc28j60.o
+                0x008007eb                enc28j60_current_bank
+                0x008007ec                enc28j60_next_packet_ptr
+ COMMON         0x008007ee        0x4 bootloader/tftp.o
+                0x008007ee                tftp_server_ip
+ COMMON         0x008007f2       0x1d bootloader/ihex.o
+                0x008007f2                ihex_len
+                0x008007f3                ihex_dataidx
+                0x008007f5                ihex_addr
+                0x008007f7                ihex_data
+                0x00800807                ihex_checksum
+                0x00800808                ihex_type
+                0x00800809                ihex_addrbyte
+                0x0080080a                ihex_addr_offset
+                0x0080080e                ihex_check
+                0x0080080f                PROVIDE (__bss_end, .)
+                0x0001f9f0                __data_load_start = LOADADDR (.data)
+                0x0001faa6                __data_load_end = (__data_load_start + SIZEOF (.data))
+
+.noinit         0x0080080f        0x0
+                0x0080080f                PROVIDE (__noinit_start, .)
+ *(.noinit*)
+                0x0080080f                PROVIDE (__noinit_end, .)
+                0x0080080f                _end = .
+                0x0080080f                PROVIDE (__heap_start, .)
+
+.eeprom         0x00810000        0x0
+ *(.eeprom*)
+                0x00810000                __eeprom_end = .
+
+.fuse
+ *(.fuse)
+ *(.lfuse)
+ *(.hfuse)
+ *(.efuse)
+
+.lock
+ *(.lock*)
+
+.signature
+ *(.signature*)
+
+.stab           0x00000000     0x51cc
+ *(.stab)
+ .stab          0x00000000      0x6cc /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+ .stab          0x000006cc      0x654 main.o
+                                0x660 (size before relaxing)
+ .stab          0x00000d20      0xeb8 stack.o
+                               0x11a0 (size before relaxing)
+ .stab          0x00001bd8      0x2d0 timer.o
+                                0x63c (size before relaxing)
+ .stab          0x00001ea8      0x384 para.o
+                                0x558 (size before relaxing)
+ .stab          0x0000222c      0x63c console.o
+                                0x954 (size before relaxing)
+ .stab          0x00002868      0x2c4 syslog.o
+                                0x624 (size before relaxing)
+ .stab          0x00002b2c      0x2b8 usart.o
+                                0x690 (size before relaxing)
+ .stab          0x00002de4      0xb70 networkcard/enc28j60.o
+                                0xf6c (size before relaxing)
+ .stab          0x00003954      0x1ec networkcard/rtl8019.o
+                                0x54c (size before relaxing)
+ .stab          0x00003b40      0x708 bootloader/tftp.o
+                                0xabc (size before relaxing)
+ .stab          0x00004248      0xa38 bootloader/ihex.o
+                                0xd8c (size before relaxing)
+ .stab          0x00004c80       0x9c /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(toupper.o)
+                                 0xa8 (size before relaxing)
+ .stab          0x00004d1c       0x6c /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(strcpy.o)
+                                 0x78 (size before relaxing)
+ .stab          0x00004d88      0x1b0 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(itoa.o)
+                                0x1bc (size before relaxing)
+ .stab          0x00004f38      0x12c /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(utoa.o)
+                                0x138 (size before relaxing)
+ .stab          0x00005064       0x90 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(eerd_byte_atmega1280.o)
+                                 0x9c (size before relaxing)
+ .stab          0x000050f4       0xd8 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(strrev.o)
+                                 0xe4 (size before relaxing)
+
+.stabstr        0x00000000     0x25b8
+ *(.stabstr)
+ .stabstr       0x00000000     0x25b8 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+
+.stab.excl
+ *(.stab.excl)
+
+.stab.exclstr
+ *(.stab.exclstr)
+
+.stab.index
+ *(.stab.index)
+
+.stab.indexstr
+ *(.stab.indexstr)
+
+.comment
+ *(.comment)
+
+.debug
+ *(.debug)
+
+.line
+ *(.line)
+
+.debug_srcinfo
+ *(.debug_srcinfo)
+
+.debug_sfnames
+ *(.debug_sfnames)
+
+.debug_aranges
+ *(.debug_aranges)
+
+.debug_pubnames
+ *(.debug_pubnames)
+
+.debug_info
+ *(.debug_info)
+ *(.gnu.linkonce.wi.*)
+
+.debug_abbrev
+ *(.debug_abbrev)
+
+.debug_line
+ *(.debug_line)
+
+.debug_frame
+ *(.debug_frame)
+
+.debug_str
+ *(.debug_str)
+
+.debug_loc
+ *(.debug_loc)
+
+.debug_macinfo
+ *(.debug_macinfo)
+OUTPUT(Hexfiles/bootloader_atmega1280.elf elf32-avr)
+LOAD linker stubs
+
+Cross Reference Table
+
+Symbol                                            File
+IP_id_counter                                     stack.o
+                                                  bootloader/ihex.o
+                                                  bootloader/tftp.o
+                                                  networkcard/rtl8019.o
+                                                  networkcard/enc28j60.o
+                                                  usart.o
+                                                  syslog.o
+                                                  console.o
+                                                  timer.o
+                                                  main.o
+__bad_interrupt                                   /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__bss_end                                         /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_clear_bss.o)
+__bss_start                                       /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_clear_bss.o)
+__data_end                                        /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_copy_data.o)
+__data_load_start                                 /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_copy_data.o)
+__data_start                                      /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_copy_data.o)
+__do_clear_bss                                    /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_clear_bss.o)
+                                                  bootloader/ihex.o
+                                                  bootloader/tftp.o
+                                                  networkcard/rtl8019.o
+                                                  networkcard/enc28j60.o
+                                                  usart.o
+                                                  syslog.o
+                                                  console.o
+                                                  timer.o
+                                                  stack.o
+                                                  main.o
+__do_copy_data                                    /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_copy_data.o)
+                                                  bootloader/ihex.o
+                                                  bootloader/tftp.o
+                                                  networkcard/enc28j60.o
+                                                  main.o
+__eerd_byte_m1280                                 /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(eerd_byte_atmega1280.o)
+                                                  para.o
+__heap_end                                        /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__init                                            /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__stack                                           /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__udivmodhi4                                      /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_udivmodhi4.o)
+                                                  /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(utoa.o)
+                                                  /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(itoa.o)
+__vector_1                                        /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_10                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_11                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_12                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_13                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_14                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_15                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_16                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_17                                       timer.o
+                                                  /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_18                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_19                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_2                                        /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_20                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_21                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_22                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_23                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_24                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_25                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_26                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_27                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_28                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_29                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_3                                        /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_30                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_31                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_32                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_33                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_34                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_35                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_36                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_37                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_38                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_39                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_4                                        /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_40                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_41                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_42                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_43                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_44                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_45                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_46                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_47                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_48                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_49                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_5                                        /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_50                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_51                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_52                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_53                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_54                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_55                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_56                                       /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_6                                        /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_7                                        /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_8                                        /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_9                                        /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vector_default                                  /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+__vectors                                         /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+_exit                                             /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_exit.o)
+arp_entry                                         bootloader/ihex.o
+                                                  bootloader/tftp.o
+                                                  networkcard/rtl8019.o
+                                                  networkcard/enc28j60.o
+                                                  usart.o
+                                                  syslog.o
+                                                  console.o
+                                                  timer.o
+                                                  stack.o
+                                                  main.o
+arp_entry_add                                     stack.o
+arp_entry_search                                  stack.o
+                                                  syslog.o
+arp_reply                                         stack.o
+arp_request                                       stack.o
+                                                  bootloader/tftp.o
+                                                  syslog.o
+check_packet                                      stack.o
+checksum                                          stack.o
+cm                                                console.o
+console_flush                                     console.o
+console_init                                      console.o
+                                                  main.o
+console_isinit                                    console.o
+console_mode                                      console.o
+                                                  main.o
+console_tx_buffer                                 console.o
+console_tx_counter                                console.o
+console_write_P                                   console.o
+                                                  bootloader/tftp.o
+                                                  main.o
+console_write_char                                console.o
+console_write_str                                 console.o
+create_new_udp_packet                             stack.o
+                                                  bootloader/tftp.o
+                                                  syslog.o
+enc28j60_config                                   networkcard/enc28j60.o
+enc28j60_current_bank                             networkcard/enc28j60.o
+enc28j60_init                                     networkcard/enc28j60.o
+                                                  stack.o
+enc28j60_macaddr                                  networkcard/enc28j60.o
+enc28j60_next_packet_ptr                          networkcard/enc28j60.o
+enc28j60_read_address                             networkcard/enc28j60.o
+enc28j60_read_buffer                              networkcard/enc28j60.o
+enc28j60_read_phy                                 networkcard/enc28j60.o
+enc28j60_receive_packet                           networkcard/enc28j60.o
+                                                  stack.o
+enc28j60_send_packet                              networkcard/enc28j60.o
+                                                  stack.o
+enc28j60_spi_read_byte                            networkcard/enc28j60.o
+enc28j60_spi_write_word                           networkcard/enc28j60.o
+enc28j60_write_address                            networkcard/enc28j60.o
+enc28j60_write_buffer                             networkcard/enc28j60.o
+enc28j60_write_phy                                networkcard/enc28j60.o
+eth_buffer                                        bootloader/ihex.o
+                                                  bootloader/tftp.o
+                                                  networkcard/rtl8019.o
+                                                  networkcard/enc28j60.o
+                                                  usart.o
+                                                  syslog.o
+                                                  console.o
+                                                  timer.o
+                                                  stack.o
+                                                  main.o
+eth_get_data                                      stack.o
+                                                  main.o
+eth_len                                           bootloader/ihex.o
+                                                  bootloader/tftp.o
+                                                  networkcard/rtl8019.o
+                                                  networkcard/enc28j60.o
+                                                  usart.o
+                                                  syslog.o
+                                                  console.o
+                                                  timer.o
+                                                  stack.o
+                                                  main.o
+exit                                              /usr/lib/gcc/avr/4.5.3/avr51/libgcc.a(_exit.o)
+                                                  /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+ihex_addr                                         bootloader/ihex.o
+ihex_addr_offset                                  bootloader/ihex.o
+ihex_addrbyte                                     bootloader/ihex.o
+ihex_appstart                                     bootloader/ihex.o
+                                                  bootloader/tftp.o
+ihex_ascii2val                                    bootloader/ihex.o
+ihex_check                                        bootloader/ihex.o
+ihex_checksum                                     bootloader/ihex.o
+ihex_data                                         bootloader/ihex.o
+ihex_dataidx                                      bootloader/ihex.o
+ihex_flash                                        bootloader/ihex.o
+                                                  bootloader/tftp.o
+ihex_init                                         bootloader/ihex.o
+                                                  bootloader/tftp.o
+ihex_intvector                                    bootloader/ihex.o
+                                                  main.o
+ihex_lastpage                                     bootloader/ihex.o
+ihex_len                                          bootloader/ihex.o
+ihex_linestate                                    bootloader/ihex.o
+ihex_program                                      bootloader/ihex.o
+ihex_type                                         bootloader/ihex.o
+itoa                                              /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(itoa.o)
+                                                  console.o
+main                                              main.o
+                                                  /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/crtm1280.o
+make_ip_header                                    stack.o
+myip                                              bootloader/ihex.o
+                                                  bootloader/tftp.o
+                                                  networkcard/rtl8019.o
+                                                  networkcard/enc28j60.o
+                                                  usart.o
+                                                  syslog.o
+                                                  console.o
+                                                  timer.o
+                                                  stack.o
+                                                  main.o
+mymac                                             networkcard/enc28j60.o
+                                                  stack.o
+new_eth_header                                    stack.o
+para_getchar                                      para.o
+                                                  stack.o
+para_getip                                        para.o
+                                                  bootloader/tftp.o
+                                                  syslog.o
+                                                  stack.o
+para_getstring                                    para.o
+                                                  bootloader/tftp.o
+stack_init                                        stack.o
+                                                  main.o
+strcpy                                            /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(strcpy.o)
+                                                  bootloader/tftp.o
+                                                  syslog.o
+                                                  para.o
+strrev                                            /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(strrev.o)
+                                                  /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(utoa.o)
+                                                  /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(itoa.o)
+syslog_send                                       syslog.o
+                                                  console.o
+syslog_server_ip                                  syslog.o
+tftp_ack                                          bootloader/tftp.o
+tftp_block                                        bootloader/tftp.o
+tftp_get                                          bootloader/tftp.o
+                                                  stack.o
+tftp_init                                         bootloader/tftp.o
+                                                  main.o
+tftp_request                                      bootloader/tftp.o
+                                                  main.o
+tftp_server_ip                                    bootloader/tftp.o
+tftp_watchdog                                     bootloader/tftp.o
+                                                  timer.o
+tftp_watchdogcheck                                bootloader/tftp.o
+                                                  main.o
+tftp_watchdogrestart                              bootloader/tftp.o
+timer_init                                        timer.o
+                                                  stack.o
+toupper                                           /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(toupper.o)
+                                                  bootloader/ihex.o
+udp_socket_process                                stack.o
+usart_init                                        usart.o
+                                                  console.o
+usart_write_char                                  usart.o
+                                                  console.o
+usart_write_str                                   usart.o
+utoa                                              /usr/lib/gcc/avr/4.5.3/../../../avr/lib/avr51/libc.a(utoa.o)
+                                                  console.o
+wdt_init                                          main.o

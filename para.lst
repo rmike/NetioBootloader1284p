@@ -1,0 +1,175 @@
+   1               		.file	"para.c"
+   2               	__SREG__ = 0x3f
+   3               	__SP_H__ = 0x3e
+   4               	__SP_L__ = 0x3d
+   5               	__CCP__ = 0x34
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+  10               		.text
+  11               	.Ltext0:
+  78               		.section	.text.para_getip,"ax",@progbits
+  81               	.global	para_getip
+  83               	para_getip:
+  84               		.stabd	46,0,0
+   1:para.c        **** /*----------------------------------------------------------------------------
+   2:para.c        ****  Copyright:      Jens Mundhenke
+   3:para.c        ****  Author:         Jens Mundhenke
+   4:para.c        ****  Remarks:		 Used on an simplified IP-stack of Ulrich Radig
+   5:para.c        ****  				 Collection of eeprom functions spreaded over the project
+   6:para.c        ****  known Problems:
+   7:para.c        ****  Version:        18.01.2009
+   8:para.c        ****  Description:    EEPROM-functions for the IP stack and applications
+   9:para.c        **** 
+  10:para.c        ****  This module interprets a stream of intel hex information and flashes it
+  11:para.c        ****  to the programm store.
+  12:para.c        **** 
+  13:para.c        ****  Dieses Programm ist freie Software. Sie können es unter den Bedingungen der
+  14:para.c        ****  GNU General Public License, wie von der Free Software Foundation veröffentlicht,
+  15:para.c        ****  weitergeben und/oder modifizieren, entweder gemäß Version 2 der Lizenz oder
+  16:para.c        ****  (nach Ihrer Option) jeder späteren Version.
+  17:para.c        **** 
+  18:para.c        ****  Die Veröffentlichung dieses Programms erfolgt in der Hoffnung,
+  19:para.c        ****  daß es Ihnen von Nutzen sein wird, aber OHNE IRGENDEINE GARANTIE,
+  20:para.c        ****  sogar ohne die implizite Garantie der MARKTREIFE oder der VERWENDBARKEIT
+  21:para.c        ****  FÜR EINEN BESTIMMTEN ZWECK. Details finden Sie in der GNU General Public License.
+  22:para.c        **** 
+  23:para.c        ****  Sie sollten eine Kopie der GNU General Public License zusammen mit diesem
+  24:para.c        ****  Programm erhalten haben.
+  25:para.c        ****  Falls nicht, schreiben Sie an die Free Software Foundation,
+  26:para.c        ****  Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
+  27:para.c        **** ----------------------------------------------------------------------------*/
+  28:para.c        **** 
+  29:para.c        **** #include <avr/eeprom.h>
+  30:para.c        **** #include <string.h>
+  31:para.c        **** 
+  32:para.c        **** #include "config.h"
+  33:para.c        **** #include "para.h"
+  34:para.c        **** 
+  35:para.c        **** //----------------------------------------------------------------------------
+  36:para.c        **** //
+  37:para.c        **** unsigned long para_getip (unsigned char *eeprom_address,unsigned long default_value)
+  38:para.c        **** {
+  86               	.LM0:
+  87               	.LFBB1:
+  88               	/* prologue: function */
+  89               	/* frame size = 0 */
+  90               	/* stack size = 0 */
+  91               	.L__stack_usage = 0
+  92 0000 CB01      		movw r24,r22
+  39:para.c        **** #if USE_PARAMETERS_FROM_EEPROM
+  40:para.c        **** 
+  41:para.c        **** 	unsigned char value[4];
+  42:para.c        **** 
+  43:para.c        **** 	for (unsigned char count = 0; count<4;count++)
+  44:para.c        **** 	{
+  45:para.c        **** 		//eeprom_busy_wait ();
+  46:para.c        **** 		value[count] = eeprom_read_byte(eeprom_address + count);
+  47:para.c        **** 	}
+  48:para.c        **** 
+  49:para.c        **** 	//Ist der EEPROM Inhalt leer?
+  50:para.c        **** 	if ((*((unsigned long*)&value[0])) == 0xFFFFFFFF)
+  51:para.c        **** 	{
+  52:para.c        **** 		return(default_value);
+  53:para.c        **** 	}
+  54:para.c        **** 	return((*((unsigned long*)&value[0])));
+  55:para.c        **** 
+  56:para.c        **** #else
+  57:para.c        **** 
+  58:para.c        **** 	return(default_value);
+  59:para.c        **** 
+  60:para.c        **** #endif
+  61:para.c        **** }
+  94               	.LM1:
+  95 0002 BA01      		movw r22,r20
+  96               	/* epilogue start */
+  97 0004 0895      		ret
+  99               	.Lscope1:
+ 101               		.stabd	78,0,0
+ 102               		.section	.text.para_getstring,"ax",@progbits
+ 108               	.global	para_getstring
+ 110               	para_getstring:
+ 111               		.stabd	46,0,0
+  62:para.c        **** 
+  63:para.c        **** 
+  64:para.c        **** 
+  65:para.c        **** //----------------------------------------------------------------------------
+  66:para.c        **** // reading a string parameter from EEPROM
+  67:para.c        **** void para_getstring (char *name, unsigned char *eeprom_address, char len, char *default_value)
+  68:para.c        **** {
+ 113               	.LM2:
+ 114               	.LFBB2:
+ 115               	/* prologue: function */
+ 116               	/* frame size = 0 */
+ 117               	/* stack size = 0 */
+ 118               	.L__stack_usage = 0
+ 119 0000 B901      		movw r22,r18
+  69:para.c        **** #if USE_PARAMETERS_FROM_EEPROM
+  70:para.c        **** 
+  71:para.c        **** 	int i;
+  72:para.c        **** 	char c;
+  73:para.c        **** 	i = 0;
+  74:para.c        **** 
+  75:para.c        **** 	// copy string from eeprom to memory
+  76:para.c        **** 	do {
+  77:para.c        **** 		c = eeprom_read_byte (eeprom_address+i);
+  78:para.c        **** 		name[i] = c;
+  79:para.c        **** 	} while ( (c != 0) && (c != 0xFF) && (i++ < len) );
+  80:para.c        **** 
+  81:para.c        **** 	// if there is empty eeprom or no termination, copy default value
+  82:para.c        **** 	if ( (c == 0xFF) || (i > len) )
+  83:para.c        **** 		strcpy ( name, default_value );
+  84:para.c        **** 
+  85:para.c        **** #else
+  86:para.c        **** 
+  87:para.c        **** 	strcpy ( name, default_value );
+ 121               	.LM3:
+ 122 0002 0E94 0000 		call strcpy
+ 123               	/* epilogue start */
+  88:para.c        **** 
+  89:para.c        **** #endif
+  90:para.c        **** }
+ 125               	.LM4:
+ 126 0006 0895      		ret
+ 128               	.Lscope2:
+ 130               		.stabd	78,0,0
+ 131               		.section	.text.para_getchar,"ax",@progbits
+ 134               	.global	para_getchar
+ 136               	para_getchar:
+ 137               		.stabd	46,0,0
+  91:para.c        **** 
+  92:para.c        **** //------------------------------------------------------------------------------
+  93:para.c        **** //
+  94:para.c        **** unsigned char para_getchar (unsigned char *eeprom_address)
+  95:para.c        **** {
+ 139               	.LM5:
+ 140               	.LFBB3:
+ 141               	/* prologue: function */
+ 142               	/* frame size = 0 */
+ 143               	/* stack size = 0 */
+ 144               	.L__stack_usage = 0
+  96:para.c        **** 	return ( eeprom_read_byte (eeprom_address) );
+ 146               	.LM6:
+ 147 0000 0E94 0000 		call __eerd_byte_m1284p
+ 148               	/* epilogue start */
+  97:para.c        **** }
+ 150               	.LM7:
+ 151 0004 0895      		ret
+ 153               	.Lscope3:
+ 155               		.stabd	78,0,0
+ 156               		.text
+ 158               	.Letext0:
+DEFINED SYMBOLS
+                            *ABS*:00000000 para.c
+     /tmp/ccE1ixu0.s:2      *ABS*:0000003f __SREG__
+     /tmp/ccE1ixu0.s:3      *ABS*:0000003e __SP_H__
+     /tmp/ccE1ixu0.s:4      *ABS*:0000003d __SP_L__
+     /tmp/ccE1ixu0.s:5      *ABS*:00000034 __CCP__
+     /tmp/ccE1ixu0.s:6      *ABS*:00000000 __tmp_reg__
+     /tmp/ccE1ixu0.s:7      *ABS*:00000001 __zero_reg__
+     /tmp/ccE1ixu0.s:83     .text.para_getip:00000000 para_getip
+     /tmp/ccE1ixu0.s:110    .text.para_getstring:00000000 para_getstring
+     /tmp/ccE1ixu0.s:136    .text.para_getchar:00000000 para_getchar
+
+UNDEFINED SYMBOLS
+strcpy
+__eerd_byte_m1284p

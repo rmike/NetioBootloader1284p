@@ -1,0 +1,163 @@
+   1               		.file	"timer.c"
+   2               	__SREG__ = 0x3f
+   3               	__SP_H__ = 0x3e
+   4               	__SP_L__ = 0x3d
+   5               	__CCP__ = 0x34
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+  10               		.text
+  11               	.Ltext0:
+ 118               		.section	.text.timer_init,"ax",@progbits
+ 120               	.global	timer_init
+ 122               	timer_init:
+ 123               		.stabd	46,0,0
+   1:timer.c       **** /*----------------------------------------------------------------------------
+   2:timer.c       ****  Copyright:      Radig Ulrich  mailto: mail@ulrichradig.de
+   3:timer.c       ****  Author:         Radig Ulrich
+   4:timer.c       ****  Remarks:
+   5:timer.c       ****  known Problems: none
+   6:timer.c       ****  Version:        24.10.2007
+   7:timer.c       ****  Description:    Timer Routinen
+   8:timer.c       ****  				 simplified for use in a bootloader by Jens Mundhenke
+   9:timer.c       **** 
+  10:timer.c       ****  Dieses Programm ist freie Software. Sie können es unter den Bedingungen der
+  11:timer.c       ****  GNU General Public License, wie von der Free Software Foundation veröffentlicht,
+  12:timer.c       ****  weitergeben und/oder modifizieren, entweder gemäß Version 2 der Lizenz oder
+  13:timer.c       ****  (nach Ihrer Option) jeder späteren Version.
+  14:timer.c       **** 
+  15:timer.c       ****  Die Veröffentlichung dieses Programms erfolgt in der Hoffnung,
+  16:timer.c       ****  daß es Ihnen von Nutzen sein wird, aber OHNE IRGENDEINE GARANTIE,
+  17:timer.c       ****  sogar ohne die implizite Garantie der MARKTREIFE oder der VERWENDBARKEIT
+  18:timer.c       ****  FÜR EINEN BESTIMMTEN ZWECK. Details finden Sie in der GNU General Public License.
+  19:timer.c       **** 
+  20:timer.c       ****  Sie sollten eine Kopie der GNU General Public License zusammen mit diesem
+  21:timer.c       ****  Programm erhalten haben.
+  22:timer.c       ****  Falls nicht, schreiben Sie an die Free Software Foundation,
+  23:timer.c       ****  Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
+  24:timer.c       **** ------------------------------------------------------------------------------*/
+  25:timer.c       **** #include "timer.h"
+  26:timer.c       **** #include "bootloader/tftp.h"
+  27:timer.c       **** 
+  28:timer.c       **** 
+  29:timer.c       **** //----------------------------------------------------------------------------
+  30:timer.c       **** //Diese Routine startet und inizialisiert den Timer
+  31:timer.c       **** void timer_init (void)
+  32:timer.c       **** {
+ 125               	.LM0:
+ 126               	.LFBB1:
+ 127               	/* prologue: function */
+ 128               	/* frame size = 0 */
+ 129               	/* stack size = 0 */
+ 130               	.L__stack_usage = 0
+  33:timer.c       **** 	TCCR1B |= (1<<WGM12) | (1<<CS10 | 0<<CS11 | 1<<CS12);
+ 132               	.LM1:
+ 133 0000 E1E8      		ldi r30,lo8(129)
+ 134 0002 F0E0      		ldi r31,hi8(129)
+ 135 0004 8081      		ld r24,Z
+ 136 0006 8D60      		ori r24,lo8(13)
+ 137 0008 8083      		st Z,r24
+  34:timer.c       **** 	TCNT1 = 0;
+ 139               	.LM2:
+ 140 000a 1092 8500 		sts 132+1,__zero_reg__
+ 141 000e 1092 8400 		sts 132,__zero_reg__
+  35:timer.c       **** 	OCR1A = (F_CPU / 1024) - 1;
+ 143               	.LM3:
+ 144 0012 88E0      		ldi r24,lo8(15624)
+ 145 0014 9DE3      		ldi r25,hi8(15624)
+ 146 0016 9093 8900 		sts 136+1,r25
+ 147 001a 8093 8800 		sts 136,r24
+  36:timer.c       **** 	TIMSK1 |= (1 << OCIE1A);
+ 149               	.LM4:
+ 150 001e EFE6      		ldi r30,lo8(111)
+ 151 0020 F0E0      		ldi r31,hi8(111)
+ 152 0022 8081      		ld r24,Z
+ 153 0024 8260      		ori r24,lo8(2)
+ 154 0026 8083      		st Z,r24
+ 155               	/* epilogue start */
+  37:timer.c       **** };
+ 157               	.LM5:
+ 158 0028 0895      		ret
+ 160               	.Lscope1:
+ 162               		.stabd	78,0,0
+ 163               		.section	.text.__vector_13,"ax",@progbits
+ 165               	.global	__vector_13
+ 167               	__vector_13:
+ 168               		.stabd	46,0,0
+  38:timer.c       **** 
+  39:timer.c       **** //----------------------------------------------------------------------------
+  40:timer.c       **** //Timer Interrupt
+  41:timer.c       **** ISR (TIMER1_COMPA_vect)
+  42:timer.c       **** {
+ 170               	.LM6:
+ 171               	.LFBB2:
+ 172 0000 1F92      		push __zero_reg__
+ 173 0002 0F92      		push r0
+ 174 0004 0FB6      		in r0,__SREG__
+ 175 0006 0F92      		push r0
+ 176 0008 1124      		clr __zero_reg__
+ 177 000a 8F93      		push r24
+ 178 000c 9F93      		push r25
+ 179               	/* prologue: Signal */
+ 180               	/* frame size = 0 */
+ 181               	/* stack size = 5 */
+ 182               	.L__stack_usage = 5
+  43:timer.c       **** 
+  44:timer.c       **** //   	tftp_watchdogtick (1000);		// parameter notes the length of interval in ms
+  45:timer.c       **** //	if ( tftp_watchdog == TFTP_WATCHDOG_OFF )
+  46:timer.c       **** //		return;
+  47:timer.c       **** 
+  48:timer.c       **** 	if (tftp_watchdog > 0)
+ 184               	.LM7:
+ 185 000e 8091 0000 		lds r24,tftp_watchdog
+ 186 0012 9091 0000 		lds r25,tftp_watchdog+1
+ 187 0016 1816      		cp __zero_reg__,r24
+ 188 0018 1906      		cpc __zero_reg__,r25
+ 189 001a 04F4      		brge .L2
+  49:timer.c       **** 		tftp_watchdog -= 1000;
+ 191               	.LM8:
+ 192 001c 8091 0000 		lds r24,tftp_watchdog
+ 193 0020 9091 0000 		lds r25,tftp_watchdog+1
+ 194 0024 885E      		subi r24,lo8(-(-1000))
+ 195 0026 9340      		sbci r25,hi8(-(-1000))
+ 196 0028 9093 0000 		sts tftp_watchdog+1,r25
+ 197 002c 8093 0000 		sts tftp_watchdog,r24
+ 198               	.L2:
+ 199               	/* epilogue start */
+  50:timer.c       **** }
+ 201               	.LM9:
+ 202 0030 9F91      		pop r25
+ 203 0032 8F91      		pop r24
+ 204 0034 0F90      		pop r0
+ 205 0036 0FBE      		out __SREG__,r0
+ 206 0038 0F90      		pop r0
+ 207 003a 1F90      		pop __zero_reg__
+ 208 003c 1895      		reti
+ 210               	.Lscope2:
+ 212               		.stabd	78,0,0
+ 213               		.comm myip,4,1
+ 214               		.comm IP_id_counter,2,1
+ 215               		.comm eth_buffer,1201,1
+ 216               		.comm eth_len,2,1
+ 217               		.comm arp_entry,50,1
+ 223               		.text
+ 225               	.Letext0:
+ 226               	.global __do_clear_bss
+DEFINED SYMBOLS
+                            *ABS*:00000000 timer.c
+     /tmp/ccj77ir9.s:2      *ABS*:0000003f __SREG__
+     /tmp/ccj77ir9.s:3      *ABS*:0000003e __SP_H__
+     /tmp/ccj77ir9.s:4      *ABS*:0000003d __SP_L__
+     /tmp/ccj77ir9.s:5      *ABS*:00000034 __CCP__
+     /tmp/ccj77ir9.s:6      *ABS*:00000000 __tmp_reg__
+     /tmp/ccj77ir9.s:7      *ABS*:00000001 __zero_reg__
+     /tmp/ccj77ir9.s:122    .text.timer_init:00000000 timer_init
+     /tmp/ccj77ir9.s:167    .text.__vector_13:00000000 __vector_13
+                            *COM*:00000004 myip
+                            *COM*:00000002 IP_id_counter
+                            *COM*:000004b1 eth_buffer
+                            *COM*:00000002 eth_len
+                            *COM*:00000032 arp_entry
+
+UNDEFINED SYMBOLS
+tftp_watchdog
+__do_clear_bss

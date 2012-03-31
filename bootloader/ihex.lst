@@ -1,0 +1,1224 @@
+   1               		.file	"ihex.c"
+   2               	__SREG__ = 0x3f
+   3               	__SP_H__ = 0x3e
+   4               	__SP_L__ = 0x3d
+   5               	__CCP__ = 0x34
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+  10               		.text
+  11               	.Ltext0:
+ 114               		.section	.text.ihex_intvector,"ax",@progbits
+ 117               	.global	ihex_intvector
+ 119               	ihex_intvector:
+ 120               		.stabd	46,0,0
+   1:bootloader/ihex.c **** /*----------------------------------------------------------------------------
+   2:bootloader/ihex.c ****  Copyright:      Jens Mundhenke
+   3:bootloader/ihex.c ****  Author:         Jens Mundhenke
+   4:bootloader/ihex.c ****  Remarks:		 Used on an simplified IP-stack of Ulrich Radig
+   5:bootloader/ihex.c ****  				 Fixed configuration for ATmega644
+   6:bootloader/ihex.c ****  known Problems:
+   7:bootloader/ihex.c ****  Version:        18.01.2009
+   8:bootloader/ihex.c ****  Description:    Interpreter and Flasher for Intelhex-lines
+   9:bootloader/ihex.c **** 
+  10:bootloader/ihex.c ****  This module interprets a stream of intel hex information and flashes it
+  11:bootloader/ihex.c ****  to the programm store.
+  12:bootloader/ihex.c **** 
+  13:bootloader/ihex.c ****  Dieses Programm ist freie Software. Sie können es unter den Bedingungen der
+  14:bootloader/ihex.c ****  GNU General Public License, wie von der Free Software Foundation veröffentlicht,
+  15:bootloader/ihex.c ****  weitergeben und/oder modifizieren, entweder gemäß Version 2 der Lizenz oder
+  16:bootloader/ihex.c ****  (nach Ihrer Option) jeder späteren Version.
+  17:bootloader/ihex.c **** 
+  18:bootloader/ihex.c ****  Die Veröffentlichung dieses Programms erfolgt in der Hoffnung,
+  19:bootloader/ihex.c ****  daß es Ihnen von Nutzen sein wird, aber OHNE IRGENDEINE GARANTIE,
+  20:bootloader/ihex.c ****  sogar ohne die implizite Garantie der MARKTREIFE oder der VERWENDBARKEIT
+  21:bootloader/ihex.c ****  FÜR EINEN BESTIMMTEN ZWECK. Details finden Sie in der GNU General Public License.
+  22:bootloader/ihex.c **** 
+  23:bootloader/ihex.c ****  Sie sollten eine Kopie der GNU General Public License zusammen mit diesem
+  24:bootloader/ihex.c ****  Programm erhalten haben.
+  25:bootloader/ihex.c ****  Falls nicht, schreiben Sie an die Free Software Foundation,
+  26:bootloader/ihex.c ****  Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
+  27:bootloader/ihex.c **** ----------------------------------------------------------------------------*/
+  28:bootloader/ihex.c **** 
+  29:bootloader/ihex.c **** #include <inttypes.h>
+  30:bootloader/ihex.c **** #include <avr/interrupt.h>
+  31:bootloader/ihex.c **** #include <avr/pgmspace.h>
+  32:bootloader/ihex.c **** #include <avr/boot.h>
+  33:bootloader/ihex.c **** 
+  34:bootloader/ihex.c **** #include <string.h>
+  35:bootloader/ihex.c **** #include <stdlib.h>
+  36:bootloader/ihex.c **** #include <stdint.h>
+  37:bootloader/ihex.c **** 
+  38:bootloader/ihex.c **** #include "config.h"
+  39:bootloader/ihex.c **** #include "usart.h"
+  40:bootloader/ihex.c **** #include "timer.h"
+  41:bootloader/ihex.c **** #include "bootloader/ihex.h"
+  42:bootloader/ihex.c **** #include "networkcard/enc28j60.h"
+  43:bootloader/ihex.c **** 
+  44:bootloader/ihex.c **** // states of line interpreter - what byte is expected to come next?
+  45:bootloader/ihex.c **** #define IHEX_START	1			// start byte ':'
+  46:bootloader/ihex.c **** #define IHEX_LENH	2			// high nibble of length
+  47:bootloader/ihex.c **** #define IHEX_LENL	3			// low nibble of length
+  48:bootloader/ihex.c **** #define	IHEX_ADDR	4			// one of the address bytes
+  49:bootloader/ihex.c **** #define IHEX_TYPEH	5			// high nibble of type
+  50:bootloader/ihex.c **** #define IHEX_TYPEL	6			// low nibble of type
+  51:bootloader/ihex.c **** #define IHEX_DATAH	7			// high nibble of one data byte
+  52:bootloader/ihex.c **** #define IHEX_DATAL	8			// low nibble of one data byte
+  53:bootloader/ihex.c **** #define IHEX_CHECKH	9			// high nibble of checksum
+  54:bootloader/ihex.c **** #define IHEX_CHECKL	10			// low nibble of checksum
+  55:bootloader/ihex.c **** #define IHEX_END	11			// line end char
+  56:bootloader/ihex.c **** 
+  57:bootloader/ihex.c **** // type bytes in line
+  58:bootloader/ihex.c **** #define IHEX_TYPEDATA				0		// data
+  59:bootloader/ihex.c **** #define IHEX_TYPEEND				1		// end marker, last line in intel hex file
+  60:bootloader/ihex.c **** #define IHEX_TYPE_EXTSEG			2		// extended segment address offset
+  61:bootloader/ihex.c **** #define IHEX_TYPE_STARTSEG			3		// start segment address offset
+  62:bootloader/ihex.c **** #define IHEX_TYPE_EXT_LIN_REC		4		// extended linear address record
+  63:bootloader/ihex.c **** #define IHEX_TYPE_START_LIN_REC		5		// start linear address record
+  64:bootloader/ihex.c **** 
+  65:bootloader/ihex.c **** #define IHEX_STARTBYTE	':'		// first byte in a line
+  66:bootloader/ihex.c **** 
+  67:bootloader/ihex.c **** #define IHEX_NOPAGE	-1			// flag for 'no block is processed in the moment'
+  68:bootloader/ihex.c **** 
+  69:bootloader/ihex.c **** uint16_t ihex_lastpage = IHEX_NOPAGE;// number of the open page
+  70:bootloader/ihex.c **** uint8_t ihex_linestate = IHEX_START;
+  71:bootloader/ihex.c **** uint8_t ihex_addrbyte;				// current addressbyte 3..0
+  72:bootloader/ihex.c **** uint8_t ihex_len;					// number of bytes in this line
+  73:bootloader/ihex.c **** uint8_t ihex_type;					// type of line
+  74:bootloader/ihex.c **** uint8_t ihex_data[IHEX_DATAMAX];	// data in that line
+  75:bootloader/ihex.c **** uint16_t ihex_dataidx;				// current data byte processed
+  76:bootloader/ihex.c **** uint8_t ihex_checksum;				// checksum calculated on the fly
+  77:bootloader/ihex.c **** uint16_t ihex_addr;					// addr found in the line
+  78:bootloader/ihex.c **** uint32_t ihex_addr_offset;			// addr-offset found in the line
+  79:bootloader/ihex.c **** uint8_t ihex_check;					// checksum in the line;
+  80:bootloader/ihex.c **** 
+  81:bootloader/ihex.c **** 
+  82:bootloader/ihex.c **** //----------------------------------------------------------------------------
+  83:bootloader/ihex.c **** // internal functions
+  84:bootloader/ihex.c **** char ihex_ascii2val (char c);
+  85:bootloader/ihex.c **** char ihex_program(uint32_t addr, char dat0, char dat1 );
+  86:bootloader/ihex.c **** 
+  87:bootloader/ihex.c **** //----------------------------------------------------------------------------
+  88:bootloader/ihex.c **** // debug-output don't forget to enable usart in config.h
+  89:bootloader/ihex.c **** //#define IHEX_DEBUG console_write
+  90:bootloader/ihex.c **** #define IHEX_DEBUG(...)
+  91:bootloader/ihex.c **** 
+  92:bootloader/ihex.c **** 
+  93:bootloader/ihex.c **** //----------------------------------------------------------------------------
+  94:bootloader/ihex.c **** // change location of interrupt vectors for the processor
+  95:bootloader/ihex.c **** // CAUTION: Do not optimize the Enable command
+  96:bootloader/ihex.c **** void ihex_intvector(char i)
+  97:bootloader/ihex.c **** {
+ 122               	.LM0:
+ 123               	.LFBB1:
+ 124               	/* prologue: function */
+ 125               	/* frame size = 0 */
+ 126               	/* stack size = 0 */
+ 127               	.L__stack_usage = 0
+  98:bootloader/ihex.c **** 	uint8_t temp;
+  99:bootloader/ihex.c **** 	/* Get MCUCR*/
+ 100:bootloader/ihex.c **** 	temp = MCUCR;
+ 129               	.LM1:
+ 130 0000 95B7      		in r25,85-32
+ 131 0002 292F      		mov r18,r25
+ 132 0004 2160      		ori r18,lo8(1)
+ 101:bootloader/ihex.c **** 	if ( i == IHEX_INTVECTOR_BOOT ) {
+ 134               	.LM2:
+ 135 0006 8130      		cpi r24,lo8(1)
+ 136 0008 01F4      		brne .L2
+ 102:bootloader/ihex.c **** 		/* Enable change of Interrupt Vectors */
+ 103:bootloader/ihex.c **** 		MCUCR = temp|(1<<IVCE);
+ 138               	.LM3:
+ 139 000a 25BF      		out 85-32,r18
+ 104:bootloader/ihex.c **** 		/* Move interrupts to Boot Flash section */
+ 105:bootloader/ihex.c **** 		MCUCR = temp | (1<<IVSEL);
+ 141               	.LM4:
+ 142 000c 9260      		ori r25,lo8(2)
+ 143 000e 00C0      		rjmp .L4
+ 144               	.L2:
+ 106:bootloader/ihex.c **** 	} else {
+ 107:bootloader/ihex.c **** 		/* Enable change of Interrupt Vectors */
+ 108:bootloader/ihex.c **** 		MCUCR = temp|(1<<IVCE);
+ 146               	.LM5:
+ 147 0010 25BF      		out 85-32,r18
+ 109:bootloader/ihex.c **** 		/* Move interrupts to Standard section */
+ 110:bootloader/ihex.c **** 		MCUCR = temp & ~(1<<IVSEL);
+ 149               	.LM6:
+ 150 0012 9D7F      		andi r25,lo8(-3)
+ 151               	.L4:
+ 152 0014 95BF      		out 85-32,r25
+ 153 0016 0895      		ret
+ 158               	.Lscope1:
+ 160               		.stabd	78,0,0
+ 161               		.section	.text.ihex_appstart,"ax",@progbits
+ 163               	.global	ihex_appstart
+ 165               	ihex_appstart:
+ 166               		.stabd	46,0,0
+ 111:bootloader/ihex.c **** 	}
+ 112:bootloader/ihex.c **** }
+ 113:bootloader/ihex.c **** 
+ 114:bootloader/ihex.c **** //----------------------------------------------------------------------------
+ 115:bootloader/ihex.c **** // start normal application
+ 116:bootloader/ihex.c **** void ihex_appstart(void)
+ 117:bootloader/ihex.c **** {
+ 168               	.LM7:
+ 169               	.LFBB2:
+ 170               	/* prologue: function */
+ 171               	/* frame size = 0 */
+ 172               	/* stack size = 0 */
+ 173               	.L__stack_usage = 0
+ 118:bootloader/ihex.c **** 	cli();								// disable interrupts
+ 175               	.LM8:
+ 176               	/* #APP */
+ 177               	 ;  118 "bootloader/ihex.c" 1
+ 178 0000 F894      		cli
+ 179               	 ;  0 "" 2
+ 180               	/* #NOAPP */
+ 181               	.L6:
+ 119:bootloader/ihex.c **** 
+ 120:bootloader/ihex.c **** #if USE_USART
+ 121:bootloader/ihex.c ****     while(!(USR & (1<<UDRE)));			// wait for pending usart transfers
+ 183               	.LM9:
+ 184 0002 8091 C000 		lds r24,192
+ 185 0006 85FF      		sbrs r24,5
+ 186 0008 00C0      		rjmp .L6
+ 122:bootloader/ihex.c **** 	UCR = 0; 							// disable usart and usart interrupts
+ 188               	.LM10:
+ 189 000a 1092 C100 		sts 193,__zero_reg__
+ 123:bootloader/ihex.c **** 	USR = (1<<TXC);						// clear interrupt flags
+ 191               	.LM11:
+ 192 000e 80E4      		ldi r24,lo8(64)
+ 193 0010 8093 C000 		sts 192,r24
+ 124:bootloader/ihex.c **** #endif
+ 125:bootloader/ihex.c **** 
+ 126:bootloader/ihex.c **** 	TIMSK1 = 0;							// disable timer interrupts
+ 195               	.LM12:
+ 196 0014 1092 6F00 		sts 111,__zero_reg__
+ 127:bootloader/ihex.c **** 	TIFR1 = 0xFF; 						// clear interrupt flags
+ 198               	.LM13:
+ 199 0018 8FEF      		ldi r24,lo8(-1)
+ 200 001a 86BB      		out 54-32,r24
+ 128:bootloader/ihex.c **** 	TCCR1B = 0;							// disable timer
+ 202               	.LM14:
+ 203 001c 1092 8100 		sts 129,__zero_reg__
+ 129:bootloader/ihex.c **** 
+ 130:bootloader/ihex.c **** 	SPCR = 0;							// disable SPI
+ 205               	.LM15:
+ 206 0020 1CBC      		out 76-32,__zero_reg__
+ 131:bootloader/ihex.c **** 	SPSR = 0;
+ 208               	.LM16:
+ 209 0022 1DBC      		out 77-32,__zero_reg__
+ 132:bootloader/ihex.c **** 
+ 133:bootloader/ihex.c **** 	ihex_intvector(IHEX_INTVECTOR_STD);	// switch back to standard interrupt vector table
+ 211               	.LM17:
+ 212 0024 80E0      		ldi r24,lo8(0)
+ 213 0026 0E94 0000 		call ihex_intvector
+ 134:bootloader/ihex.c **** 
+ 135:bootloader/ihex.c **** 	asm volatile ( "jmp 0x0000" );		// start application
+ 215               	.LM18:
+ 216               	/* #APP */
+ 217               	 ;  135 "bootloader/ihex.c" 1
+ 218 002a 0C94 0000 		jmp 0x0000
+ 219               	 ;  0 "" 2
+ 220               	/* epilogue start */
+ 136:bootloader/ihex.c **** }
+ 222               	.LM19:
+ 223               	/* #NOAPP */
+ 224 002e 0895      		ret
+ 226               	.Lscope2:
+ 228               		.stabd	78,0,0
+ 229               		.section	.text.ihex_ascii2val,"ax",@progbits
+ 232               	.global	ihex_ascii2val
+ 234               	ihex_ascii2val:
+ 235               		.stabd	46,0,0
+ 137:bootloader/ihex.c **** 
+ 138:bootloader/ihex.c **** 
+ 139:bootloader/ihex.c **** //----------------------------------------------------------------------------
+ 140:bootloader/ihex.c **** // dummy converter, expects upper Letters and numbers
+ 141:bootloader/ihex.c **** char ihex_ascii2val ( char c )
+ 142:bootloader/ihex.c **** {
+ 237               	.LM20:
+ 238               	.LFBB3:
+ 239               	/* prologue: function */
+ 240               	/* frame size = 0 */
+ 241               	/* stack size = 0 */
+ 242               	.L__stack_usage = 0
+ 143:bootloader/ihex.c **** 	if (c <= '9') return (c-'0');
+ 244               	.LM21:
+ 245 0000 8A33      		cpi r24,lo8(58)
+ 246 0002 00F4      		brsh .L9
+ 248               	.LM22:
+ 249 0004 8053      		subi r24,lo8(-(-48))
+ 250 0006 0895      		ret
+ 251               	.L9:
+ 144:bootloader/ihex.c **** 	else 		  return (c-55);
+ 253               	.LM23:
+ 254 0008 8753      		subi r24,lo8(-(-55))
+ 145:bootloader/ihex.c **** }
+ 256               	.LM24:
+ 257 000a 0895      		ret
+ 259               	.Lscope3:
+ 261               		.stabd	78,0,0
+ 262               		.section	.text.ihex_init,"ax",@progbits
+ 264               	.global	ihex_init
+ 266               	ihex_init:
+ 267               		.stabd	46,0,0
+ 146:bootloader/ihex.c **** 
+ 147:bootloader/ihex.c **** 
+ 148:bootloader/ihex.c **** //----------------------------------------------------------------------------
+ 149:bootloader/ihex.c **** // init this module
+ 150:bootloader/ihex.c **** void ihex_init(void)
+ 151:bootloader/ihex.c **** {
+ 269               	.LM25:
+ 270               	.LFBB4:
+ 271               	/* prologue: function */
+ 272               	/* frame size = 0 */
+ 273               	/* stack size = 0 */
+ 274               	.L__stack_usage = 0
+ 152:bootloader/ihex.c **** 	ihex_linestate = IHEX_START;
+ 276               	.LM26:
+ 277 0000 81E0      		ldi r24,lo8(1)
+ 278 0002 8093 0000 		sts ihex_linestate,r24
+ 279               	/* epilogue start */
+ 153:bootloader/ihex.c **** }
+ 281               	.LM27:
+ 282 0006 0895      		ret
+ 284               	.Lscope4:
+ 286               		.stabd	78,0,0
+ 287               		.section	.text.ihex_program,"ax",@progbits
+ 292               	.global	ihex_program
+ 294               	ihex_program:
+ 295               		.stabd	46,0,0
+ 154:bootloader/ihex.c **** 
+ 155:bootloader/ihex.c **** 
+ 156:bootloader/ihex.c **** //----------------------------------------------------------------------------
+ 157:bootloader/ihex.c **** // taking the intel hex file byte by byte, waiting for a complete line, flashing it
+ 158:bootloader/ihex.c **** //
+ 159:bootloader/ihex.c **** // CAUTION:
+ 160:bootloader/ihex.c **** // due to the nature of the buffer a page will be deleted before it is flashed
+ 161:bootloader/ihex.c **** // if the contents of a page arrives not in one sequence, only the last part
+ 162:bootloader/ihex.c **** // will be kept
+ 163:bootloader/ihex.c **** //
+ 164:bootloader/ihex.c **** // the END-line of IntelHex is needed to complete the flashing of the last page
+ 165:bootloader/ihex.c **** //
+ 166:bootloader/ihex.c **** char ihex_flash ( char c )
+ 167:bootloader/ihex.c **** {
+ 168:bootloader/ihex.c **** 	unsigned char sreg;		// stores the INT-state while int is disabled
+ 169:bootloader/ihex.c **** 	char rc;				// return code
+ 170:bootloader/ihex.c **** 	int i;
+ 171:bootloader/ihex.c **** 
+ 172:bootloader/ihex.c **** 	c = toupper(c);
+ 173:bootloader/ihex.c **** 
+ 174:bootloader/ihex.c **** //	IHEX_DEBUG ( "IHEX %c, State %i\r\n", c, ihex_linestate );
+ 175:bootloader/ihex.c **** 
+ 176:bootloader/ihex.c **** 	// only 0..9 and A..F is valid inside the line
+ 177:bootloader/ihex.c **** 	if ( !(ihex_linestate == IHEX_START || ihex_linestate == IHEX_END) )
+ 178:bootloader/ihex.c **** 		if ( (c < '0') || ( c > '9' && c < 'A' ) || ( c > 'F' ) ) {
+ 179:bootloader/ihex.c **** 			ihex_linestate = IHEX_START;
+ 180:bootloader/ihex.c **** 			return IHEX_ERRCHAR;
+ 181:bootloader/ihex.c **** 		}
+ 182:bootloader/ihex.c **** 
+ 183:bootloader/ihex.c **** 	// interpret the char
+ 184:bootloader/ihex.c **** 	switch ( ihex_linestate ) {
+ 185:bootloader/ihex.c **** 		case IHEX_START:						// start byte ':'
+ 186:bootloader/ihex.c **** 			if ( c == IHEX_STARTBYTE ) {
+ 187:bootloader/ihex.c **** 				ihex_addrbyte = 3;
+ 188:bootloader/ihex.c **** 				ihex_addr = 0;
+ 189:bootloader/ihex.c **** 				ihex_dataidx = 0;
+ 190:bootloader/ihex.c **** 				ihex_linestate = IHEX_LENH;
+ 191:bootloader/ihex.c **** 			}
+ 192:bootloader/ihex.c **** 			break;
+ 193:bootloader/ihex.c **** 		case IHEX_LENH:							// high nibble of length
+ 194:bootloader/ihex.c **** 			ihex_len = ihex_ascii2val(c) << 4;
+ 195:bootloader/ihex.c **** 			ihex_linestate = IHEX_LENL;
+ 196:bootloader/ihex.c **** 			break;
+ 197:bootloader/ihex.c **** 		case IHEX_LENL:							// low nibble of length
+ 198:bootloader/ihex.c **** 			ihex_len += ihex_ascii2val(c);
+ 199:bootloader/ihex.c **** 			ihex_checksum = ihex_len;			// start calculating the checksum
+ 200:bootloader/ihex.c **** 			if ( ihex_len <= IHEX_DATAMAX ) {
+ 201:bootloader/ihex.c **** 				ihex_linestate = IHEX_ADDR;
+ 202:bootloader/ihex.c **** 			} else {
+ 203:bootloader/ihex.c **** 				ihex_linestate = IHEX_START;
+ 204:bootloader/ihex.c **** 				return IHEX_ERRLEN;
+ 205:bootloader/ihex.c **** 			}
+ 206:bootloader/ihex.c **** 			break;
+ 207:bootloader/ihex.c **** 		case IHEX_ADDR:							// one of the address bytes
+ 208:bootloader/ihex.c **** 			ihex_addr <<= 4;					// shift the result of the nibbles before
+ 209:bootloader/ihex.c **** 			ihex_addr += ihex_ascii2val(c);		// add the current nibble
+ 210:bootloader/ihex.c **** 			if ( !(ihex_addrbyte & 0x01) ) {	// calc checksum for second and forth byte of addr
+ 211:bootloader/ihex.c **** 				ihex_checksum += (ihex_addr & 0xff);
+ 212:bootloader/ihex.c **** 			}
+ 213:bootloader/ihex.c **** 			if ( !(ihex_addrbyte--) )			// last byte of address processed?
+ 214:bootloader/ihex.c **** 				ihex_linestate = IHEX_TYPEH;	// go to next state
+ 215:bootloader/ihex.c **** 			break;
+ 216:bootloader/ihex.c **** 		case IHEX_TYPEH:						// high nibble of type
+ 217:bootloader/ihex.c **** 			ihex_type = ihex_ascii2val(c) << 4;
+ 218:bootloader/ihex.c **** 			ihex_linestate = IHEX_TYPEL;
+ 219:bootloader/ihex.c **** 			break;
+ 220:bootloader/ihex.c **** 		case IHEX_TYPEL:						// low nibble of type
+ 221:bootloader/ihex.c **** 			ihex_type += ihex_ascii2val(c);
+ 222:bootloader/ihex.c **** 			ihex_checksum += ihex_type;			// calculate the checksum
+ 223:bootloader/ihex.c **** 			ihex_linestate = ( ihex_len )?IHEX_DATAH:IHEX_CHECKH;
+ 224:bootloader/ihex.c **** 			break;
+ 225:bootloader/ihex.c **** 		case IHEX_DATAH:						// high nibble of one data byte
+ 226:bootloader/ihex.c **** 			ihex_data[ihex_dataidx] = ihex_ascii2val(c) << 4;
+ 227:bootloader/ihex.c **** 			ihex_linestate = IHEX_DATAL;
+ 228:bootloader/ihex.c **** 			break;
+ 229:bootloader/ihex.c **** 		case IHEX_DATAL:						// low nibble of one data byte
+ 230:bootloader/ihex.c **** 			ihex_data[ihex_dataidx] += ihex_ascii2val(c);
+ 231:bootloader/ihex.c **** 			ihex_checksum += ihex_data[ihex_dataidx];
+ 232:bootloader/ihex.c **** 												// loop for next data byte or terminate data
+ 233:bootloader/ihex.c **** 			ihex_linestate = ( ++ihex_dataidx < ihex_len )?IHEX_DATAH:IHEX_CHECKH;
+ 234:bootloader/ihex.c **** 			break;
+ 235:bootloader/ihex.c **** 		case IHEX_CHECKH:						// high nibble of checksum
+ 236:bootloader/ihex.c **** 			ihex_check = ihex_ascii2val(c) << 4;
+ 237:bootloader/ihex.c **** 			ihex_linestate = IHEX_CHECKL;
+ 238:bootloader/ihex.c **** 			break;
+ 239:bootloader/ihex.c **** 		case IHEX_CHECKL:						// low nibble of checksum
+ 240:bootloader/ihex.c **** 			ihex_check += ihex_ascii2val(c);
+ 241:bootloader/ihex.c **** 			ihex_checksum += ihex_check;		// calculate the checksum
+ 242:bootloader/ihex.c **** 			if ( ihex_checksum ) {				// checksum should be zero in this state
+ 243:bootloader/ihex.c **** 				IHEX_DEBUG ( "IHEX wrong Checksum %x!\n\r", ihex_checksum );
+ 244:bootloader/ihex.c **** 				ihex_linestate = IHEX_START;
+ 245:bootloader/ihex.c **** 				return IHEX_ERRCHECK;
+ 246:bootloader/ihex.c **** 			}
+ 247:bootloader/ihex.c **** 			ihex_linestate = IHEX_END;
+ 248:bootloader/ihex.c **** 			break;
+ 249:bootloader/ihex.c **** 		case IHEX_END:
+ 250:bootloader/ihex.c **** 			ihex_linestate = IHEX_START;		// we are starting a new line
+ 251:bootloader/ihex.c **** 			if ( c == 0x0a || c == 0x0d ) {		// line is terminated
+ 252:bootloader/ihex.c **** 				IHEX_DEBUG ( "IHEX Hurra!\n\r" );
+ 253:bootloader/ihex.c **** 				sreg = SREG;
+ 254:bootloader/ihex.c **** 				cli();
+ 255:bootloader/ihex.c **** 				rc = 0;
+ 256:bootloader/ihex.c **** 				switch ( ihex_type ) {
+ 257:bootloader/ihex.c **** 					case IHEX_TYPEDATA:
+ 258:bootloader/ihex.c **** 						for ( i=0; (i<ihex_len) && (!rc); i+=2, ihex_addr+=2 )
+ 259:bootloader/ihex.c **** 				  			rc = ihex_program (ihex_addr + ihex_addr_offset, ihex_data[i], ihex_data[i+1]);
+ 260:bootloader/ihex.c **** 				  		break;
+ 261:bootloader/ihex.c **** 				  	case IHEX_TYPEEND:
+ 262:bootloader/ihex.c **** 				  		rc = ihex_program (ihex_addr + ihex_addr_offset, 0, 0);	// complete flash process of last p
+ 263:bootloader/ihex.c **** 				  		break;
+ 264:bootloader/ihex.c **** 				  	case IHEX_TYPE_EXTSEG:
+ 265:bootloader/ihex.c **** 				  		ihex_addr_offset = ((uint16_t)ihex_data[0] << 8) + ihex_data[1];
+ 266:bootloader/ihex.c **** 				  		ihex_addr_offset <<= 4;
+ 267:bootloader/ihex.c **** 				  		rc = IHEX_NOERR;
+ 268:bootloader/ihex.c **** 				  		break;
+ 269:bootloader/ihex.c **** 				  	case IHEX_TYPE_STARTSEG:
+ 270:bootloader/ihex.c **** 				  		// found this type at end of hex file. ignore this line.
+ 271:bootloader/ihex.c **** 				  		rc = IHEX_NOERR;
+ 272:bootloader/ihex.c **** 				  		break;
+ 273:bootloader/ihex.c **** 				  	default:
+ 274:bootloader/ihex.c **** 				  		rc = IHEX_ERRTYPE;		// other intel commands are not supported
+ 275:bootloader/ihex.c **** 				  								// will be needed for addresses > 0xffff
+ 276:bootloader/ihex.c **** 				}
+ 277:bootloader/ihex.c **** 				SREG = sreg;
+ 278:bootloader/ihex.c **** 				return rc;
+ 279:bootloader/ihex.c **** 			} else
+ 280:bootloader/ihex.c **** 				return IHEX_ERRLINE;
+ 281:bootloader/ihex.c **** 			break;
+ 282:bootloader/ihex.c **** 		default:
+ 283:bootloader/ihex.c **** 			IHEX_DEBUG ( "IHEX wrong linestate %i!\n\r", (int)ihex_linestate );
+ 284:bootloader/ihex.c **** 			return IHEX_ERRSTATE;
+ 285:bootloader/ihex.c **** 	}
+ 286:bootloader/ihex.c **** 
+ 287:bootloader/ihex.c **** 	return IHEX_NOERR;
+ 288:bootloader/ihex.c **** }
+ 289:bootloader/ihex.c **** 
+ 290:bootloader/ihex.c **** //#define IHEX_DEBUG usart_write
+ 291:bootloader/ihex.c **** 
+ 292:bootloader/ihex.c **** 
+ 293:bootloader/ihex.c **** char ihex_program(uint32_t addr, char dat0, char dat1 )
+ 294:bootloader/ihex.c **** {
+ 297               	.LM28:
+ 298               	.LFBB5:
+ 299 0000 FF92      		push r15
+ 300 0002 0F93      		push r16
+ 301 0004 1F93      		push r17
+ 302               	/* prologue: function */
+ 303               	/* frame size = 0 */
+ 304               	/* stack size = 3 */
+ 305               	.L__stack_usage = 3
+ 306 0006 522F      		mov r21,r18
+ 295:bootloader/ihex.c **** 	uint16_t page = addr / SPM_PAGESIZE;
+ 296:bootloader/ihex.c **** 	unsigned int w;
+ 297:bootloader/ihex.c **** 
+ 298:bootloader/ihex.c **** //	IHEX_DEBUG("%2x%2x@%x\r\n", (int)dat0, (int)dat1, addr );
+ 299:bootloader/ihex.c **** 
+ 300:bootloader/ihex.c **** 	if ( addr >= BOOTLOADERSTARTADR )
+ 308               	.LM29:
+ 309 0008 6030      		cpi r22,lo8(122880)
+ 310 000a 20EE      		ldi r18,hi8(122880)
+ 311 000c 7207      		cpc r23,r18
+ 312 000e 21E0      		ldi r18,hlo8(122880)
+ 313 0010 8207      		cpc r24,r18
+ 314 0012 20E0      		ldi r18,hhi8(122880)
+ 315 0014 9207      		cpc r25,r18
+ 316 0016 00F0      		brlo .+2
+ 317 0018 00C0      		rjmp .L24
+ 318               	.L27:
+ 301:bootloader/ihex.c **** 		return	IHEX_ERRADDR;		// protect yourself!
+ 302:bootloader/ihex.c **** 
+ 303:bootloader/ihex.c **** 	eeprom_busy_wait();
+ 320               	.LM30:
+ 321 001a F999      		sbic 63-32,1
+ 322 001c 00C0      		rjmp .L27
+ 295:bootloader/ihex.c **** 	uint16_t page = addr / SPM_PAGESIZE;
+ 324               	.LM31:
+ 325 001e 072F      		mov r16,r23
+ 326 0020 182F      		mov r17,r24
+ 327 0022 292F      		mov r18,r25
+ 328 0024 3327      		clr r19
+ 329 0026 D801      		movw r26,r16
+ 304:bootloader/ihex.c **** 
+ 305:bootloader/ihex.c **** 	// if we change the page or got the END-line, flash the current page
+ 306:bootloader/ihex.c **** 	if ( ihex_lastpage != IHEX_NOPAGE
+ 331               	.LM32:
+ 332 0028 0091 0000 		lds r16,ihex_lastpage
+ 333 002c 1091 0000 		lds r17,ihex_lastpage+1
+ 334 0030 EFEF      		ldi r30,hi8(-1)
+ 335 0032 0F3F      		cpi r16,lo8(-1)
+ 336 0034 1E07      		cpc r17,r30
+ 337 0036 01F0      		breq .L15
+ 307:bootloader/ihex.c **** 	  && (ihex_lastpage != page || ihex_type == IHEX_TYPEEND) ) {
+ 339               	.LM33:
+ 340 0038 0A17      		cp r16,r26
+ 341 003a 1B07      		cpc r17,r27
+ 342 003c 01F4      		brne .L16
+ 344               	.LM34:
+ 345 003e 2091 0000 		lds r18,ihex_type
+ 346 0042 2130      		cpi r18,lo8(1)
+ 347 0044 01F4      		brne .L15
+ 348               	.L16:
+ 308:bootloader/ihex.c **** //		IHEX_DEBUG ( "W %x ", (uint16_t)ihex_lastpage*SPM_PAGESIZE );
+ 309:bootloader/ihex.c **** 		boot_page_write ((uint32_t)ihex_lastpage*SPM_PAGESIZE);	// store buffer in flash
+ 350               	.LM35:
+ 351 0046 20E0      		ldi r18,lo8(0)
+ 352 0048 30E0      		ldi r19,hi8(0)
+ 353 004a 322F      		mov r19,r18
+ 354 004c 212F      		mov r18,r17
+ 355 004e 102F      		mov r17,r16
+ 356 0050 0027      		clr r16
+ 357 0052 E5E0      		ldi r30,lo8(5)
+ 358 0054 FE2E      		mov r15,r30
+ 359               	/* #APP */
+ 360               	 ;  309 "bootloader/ihex.c" 1
+ 361 0056 F801      		movw r30, r16
+ 362 0058 2093 5B00 		sts 91, r18
+ 363 005c F092 5700 		sts 87, r15
+ 364 0060 E895      		spm
+ 365               		
+ 366               	 ;  0 "" 2
+ 310:bootloader/ihex.c **** 		while (boot_rww_busy())
+ 311:bootloader/ihex.c **** 			boot_rww_enable();
+ 368               	.LM36:
+ 369               	/* #NOAPP */
+ 370 0062 21E1      		ldi r18,lo8(17)
+ 310:bootloader/ihex.c **** 		while (boot_rww_busy())
+ 372               	.LM37:
+ 373 0064 00C0      		rjmp .L17
+ 374               	.L18:
+ 376               	.LM38:
+ 377               	/* #APP */
+ 378               	 ;  311 "bootloader/ihex.c" 1
+ 379 0066 2093 5700 		sts 87, r18
+ 380 006a E895      		spm
+ 381               		
+ 382               	 ;  0 "" 2
+ 383               	/* #NOAPP */
+ 384               	.L17:
+ 310:bootloader/ihex.c **** 		while (boot_rww_busy())
+ 386               	.LM39:
+ 387 006c 07B6      		in __tmp_reg__,87-32
+ 388 006e 06FC      		sbrc __tmp_reg__,6
+ 389 0070 00C0      		rjmp .L18
+ 312:bootloader/ihex.c **** 		ihex_lastpage = IHEX_NOPAGE;					// page is done, forget it
+ 391               	.LM40:
+ 392 0072 2FEF      		ldi r18,lo8(-1)
+ 393 0074 3FEF      		ldi r19,hi8(-1)
+ 394 0076 3093 0000 		sts ihex_lastpage+1,r19
+ 395 007a 2093 0000 		sts ihex_lastpage,r18
+ 396               	.L15:
+ 313:bootloader/ihex.c **** 	}
+ 314:bootloader/ihex.c **** 
+ 315:bootloader/ihex.c **** 	switch ( ihex_type ) {
+ 398               	.LM41:
+ 399 007e 2091 0000 		lds r18,ihex_type
+ 400 0082 2223      		tst r18
+ 401 0084 01F0      		breq .L19
+ 402 0086 2130      		cpi r18,lo8(1)
+ 403 0088 01F0      		breq .+2
+ 404 008a 00C0      		rjmp .L29
+ 316:bootloader/ihex.c **** 		case IHEX_TYPEEND:
+ 317:bootloader/ihex.c **** 			boot_rww_enable();			// reenable RWW-section
+ 406               	.LM42:
+ 407 008c 81E1      		ldi r24,lo8(17)
+ 408               	/* #APP */
+ 409               	 ;  317 "bootloader/ihex.c" 1
+ 410 008e 8093 5700 		sts 87, r24
+ 411 0092 E895      		spm
+ 412               		
+ 413               	 ;  0 "" 2
+ 414               	/* #NOAPP */
+ 415 0094 00C0      		rjmp .L26
+ 416               	.L19:
+ 318:bootloader/ihex.c **** 			break;
+ 319:bootloader/ihex.c **** 		case IHEX_TYPEDATA:
+ 320:bootloader/ihex.c **** 			if ( ihex_len == 0 )		// nothing to do...
+ 418               	.LM43:
+ 419 0096 2091 0000 		lds r18,ihex_len
+ 420 009a 2223      		tst r18
+ 421 009c 01F0      		breq .L26
+ 321:bootloader/ihex.c **** 				break;
+ 322:bootloader/ihex.c **** 			if ( ihex_lastpage == IHEX_NOPAGE )	{	// page is not prepared for reprogramming
+ 423               	.LM44:
+ 424 009e 2091 0000 		lds r18,ihex_lastpage
+ 425 00a2 3091 0000 		lds r19,ihex_lastpage+1
+ 426 00a6 EFEF      		ldi r30,hi8(-1)
+ 427 00a8 2F3F      		cpi r18,lo8(-1)
+ 428 00aa 3E07      		cpc r19,r30
+ 429 00ac 01F4      		brne .L21
+ 323:bootloader/ihex.c **** //				IHEX_DEBUG ( "E %x ", addr );
+ 324:bootloader/ihex.c **** 				boot_page_erase (addr);				// erase page we have data for
+ 431               	.LM45:
+ 432 00ae 23E0      		ldi r18,lo8(3)
+ 433               	/* #APP */
+ 434               	 ;  324 "bootloader/ihex.c" 1
+ 435 00b0 FB01      		movw r30, r22
+ 436 00b2 8093 5B00 		sts  91, r24
+ 437 00b6 2093 5700 		sts 87, r18
+ 438 00ba E895      		spm
+ 439               		
+ 440               	 ;  0 "" 2
+ 325:bootloader/ihex.c **** 				while (boot_rww_busy())
+ 326:bootloader/ihex.c **** 					boot_rww_enable();
+ 442               	.LM46:
+ 443               	/* #NOAPP */
+ 444 00bc 21E1      		ldi r18,lo8(17)
+ 325:bootloader/ihex.c **** 				while (boot_rww_busy())
+ 446               	.LM47:
+ 447 00be 00C0      		rjmp .L22
+ 448               	.L23:
+ 450               	.LM48:
+ 451               	/* #APP */
+ 452               	 ;  326 "bootloader/ihex.c" 1
+ 453 00c0 2093 5700 		sts 87, r18
+ 454 00c4 E895      		spm
+ 455               		
+ 456               	 ;  0 "" 2
+ 457               	/* #NOAPP */
+ 458               	.L22:
+ 325:bootloader/ihex.c **** 				while (boot_rww_busy())
+ 460               	.LM49:
+ 461 00c6 07B6      		in __tmp_reg__,87-32
+ 462 00c8 06FC      		sbrc __tmp_reg__,6
+ 463 00ca 00C0      		rjmp .L23
+ 327:bootloader/ihex.c **** 				ihex_lastpage = page;				// remember the page we have prepared
+ 465               	.LM50:
+ 466 00cc B093 0000 		sts ihex_lastpage+1,r27
+ 467 00d0 A093 0000 		sts ihex_lastpage,r26
+ 468               	.L21:
+ 328:bootloader/ihex.c **** 			}
+ 329:bootloader/ihex.c **** 			w = dat0;					// Set up little-endian word.
+ 330:bootloader/ihex.c **** 			w += dat1 << 8;
+ 470               	.LM51:
+ 471 00d4 F52F      		mov r31,r21
+ 472 00d6 E0E0      		ldi r30,lo8(0)
+ 473 00d8 9F01      		movw r18,r30
+ 474 00da 240F      		add r18,r20
+ 475 00dc 311D      		adc r19,__zero_reg__
+ 331:bootloader/ihex.c **** 			boot_page_fill ( addr, w );	// write it to buffer
+ 477               	.LM52:
+ 478 00de 41E0      		ldi r20,lo8(1)
+ 479               	/* #APP */
+ 480               	 ;  331 "bootloader/ihex.c" 1
+ 481 00e0 0901      		movw  r0, r18
+ 482 00e2 FB01      		movw r30, r22
+ 483 00e4 8093 5B00 		sts 91, r24
+ 484 00e8 4093 5700 		sts 87, r20
+ 485 00ec E895      		spm
+ 486 00ee 1124      		clr  r1
+ 487               		
+ 488               	 ;  0 "" 2
+ 489               	/* #NOAPP */
+ 490 00f0 00C0      		rjmp .L26
+ 491               	.L24:
+ 301:bootloader/ihex.c **** 		return	IHEX_ERRADDR;		// protect yourself!
+ 493               	.LM53:
+ 494 00f2 87E0      		ldi r24,lo8(7)
+ 495 00f4 00C0      		rjmp .L13
+ 496               	.L29:
+ 332:bootloader/ihex.c **** //			IHEX_DEBUG ("%4x@%4x ", w, addr );
+ 333:bootloader/ihex.c **** 			break;
+ 334:bootloader/ihex.c **** 		default:
+ 335:bootloader/ihex.c **** 			return IHEX_ERRTYPE;	// unsuported type of data
+ 498               	.LM54:
+ 499 00f6 86E0      		ldi r24,lo8(6)
+ 500 00f8 00C0      		rjmp .L13
+ 501               	.L26:
+ 336:bootloader/ihex.c **** 	}
+ 337:bootloader/ihex.c **** 
+ 338:bootloader/ihex.c **** 	return IHEX_NOERR;
+ 503               	.LM55:
+ 504 00fa 80E0      		ldi r24,lo8(0)
+ 505               	.L13:
+ 506               	/* epilogue start */
+ 339:bootloader/ihex.c **** }
+ 508               	.LM56:
+ 509 00fc 1F91      		pop r17
+ 510 00fe 0F91      		pop r16
+ 511 0100 FF90      		pop r15
+ 512 0102 0895      		ret
+ 517               	.Lscope5:
+ 519               		.stabd	78,0,0
+ 520               		.section	.text.ihex_flash,"ax",@progbits
+ 523               	.global	ihex_flash
+ 525               	ihex_flash:
+ 526               		.stabd	46,0,0
+ 167:bootloader/ihex.c **** {
+ 528               	.LM57:
+ 529               	.LFBB6:
+ 530 0000 FF92      		push r15
+ 531 0002 0F93      		push r16
+ 532 0004 1F93      		push r17
+ 533 0006 CF93      		push r28
+ 534 0008 DF93      		push r29
+ 535               	/* prologue: function */
+ 536               	/* frame size = 0 */
+ 537               	/* stack size = 5 */
+ 538               	.L__stack_usage = 5
+ 172:bootloader/ihex.c **** 	c = toupper(c);
+ 540               	.LM58:
+ 541 000a 90E0      		ldi r25,lo8(0)
+ 542 000c 0E94 0000 		call toupper
+ 177:bootloader/ihex.c **** 	if ( !(ihex_linestate == IHEX_START || ihex_linestate == IHEX_END) )
+ 544               	.LM59:
+ 545 0010 9091 0000 		lds r25,ihex_linestate
+ 546 0014 9130      		cpi r25,lo8(1)
+ 547 0016 01F0      		breq .L31
+ 177:bootloader/ihex.c **** 	if ( !(ihex_linestate == IHEX_START || ihex_linestate == IHEX_END) )
+ 549               	.LM60:
+ 550 0018 9B30      		cpi r25,lo8(11)
+ 551 001a 01F4      		brne .+2
+ 552 001c 00C0      		rjmp .L32
+ 178:bootloader/ihex.c **** 		if ( (c < '0') || ( c > '9' && c < 'A' ) || ( c > 'F' ) ) {
+ 554               	.LM61:
+ 555 001e 8033      		cpi r24,lo8(48)
+ 556 0020 00F0      		brlo .L33
+ 178:bootloader/ihex.c **** 		if ( (c < '0') || ( c > '9' && c < 'A' ) || ( c > 'F' ) ) {
+ 558               	.LM62:
+ 559 0022 282F      		mov r18,r24
+ 560 0024 2A53      		subi r18,lo8(-(-58))
+ 561 0026 2730      		cpi r18,lo8(7)
+ 562 0028 00F0      		brlo .L33
+ 563 002a 8734      		cpi r24,lo8(71)
+ 564 002c 00F0      		brlo .L34
+ 565               	.L33:
+ 179:bootloader/ihex.c **** 			ihex_linestate = IHEX_START;
+ 567               	.LM63:
+ 568 002e 81E0      		ldi r24,lo8(1)
+ 569 0030 8093 0000 		sts ihex_linestate,r24
+ 180:bootloader/ihex.c **** 			return IHEX_ERRCHAR;
+ 571               	.LM64:
+ 572 0034 00C0      		rjmp .L35
+ 573               	.L34:
+ 184:bootloader/ihex.c **** 	switch ( ihex_linestate ) {
+ 575               	.LM65:
+ 576 0036 9630      		cpi r25,lo8(6)
+ 577 0038 01F4      		brne .+2
+ 578 003a 00C0      		rjmp .L40
+ 579 003c 9730      		cpi r25,lo8(7)
+ 580 003e 00F4      		brsh .L45
+ 581 0040 9330      		cpi r25,lo8(3)
+ 582 0042 01F0      		breq .L37
+ 583 0044 9430      		cpi r25,lo8(4)
+ 584 0046 00F4      		brsh .L46
+ 585 0048 9130      		cpi r25,lo8(1)
+ 586 004a 01F0      		breq .L31
+ 587 004c 9230      		cpi r25,lo8(2)
+ 588 004e 01F0      		breq .+2
+ 589 0050 00C0      		rjmp .L61
+ 590 0052 00C0      		rjmp .L72
+ 591               	.L46:
+ 592 0054 9430      		cpi r25,lo8(4)
+ 593 0056 01F4      		brne .+2
+ 594 0058 00C0      		rjmp .L38
+ 595 005a 9530      		cpi r25,lo8(5)
+ 596 005c 01F0      		breq .+2
+ 597 005e 00C0      		rjmp .L61
+ 598 0060 00C0      		rjmp .L73
+ 599               	.L45:
+ 600 0062 9930      		cpi r25,lo8(9)
+ 601 0064 01F4      		brne .+2
+ 602 0066 00C0      		rjmp .L43
+ 603 0068 9A30      		cpi r25,lo8(10)
+ 604 006a 00F4      		brsh .L47
+ 605 006c 9730      		cpi r25,lo8(7)
+ 606 006e 01F4      		brne .+2
+ 607 0070 00C0      		rjmp .L41
+ 608 0072 9830      		cpi r25,lo8(8)
+ 609 0074 01F0      		breq .+2
+ 610 0076 00C0      		rjmp .L61
+ 611 0078 00C0      		rjmp .L74
+ 612               	.L47:
+ 613 007a 9A30      		cpi r25,lo8(10)
+ 614 007c 01F4      		brne .+2
+ 615 007e 00C0      		rjmp .L44
+ 616 0080 9B30      		cpi r25,lo8(11)
+ 617 0082 01F0      		breq .+2
+ 618 0084 00C0      		rjmp .L61
+ 619 0086 00C0      		rjmp .L32
+ 620               	.L31:
+ 186:bootloader/ihex.c **** 			if ( c == IHEX_STARTBYTE ) {
+ 622               	.LM66:
+ 623 0088 8A33      		cpi r24,lo8(58)
+ 624 008a 01F0      		breq .+2
+ 625 008c 00C0      		rjmp .L63
+ 187:bootloader/ihex.c **** 				ihex_addrbyte = 3;
+ 627               	.LM67:
+ 628 008e 83E0      		ldi r24,lo8(3)
+ 629 0090 8093 0000 		sts ihex_addrbyte,r24
+ 188:bootloader/ihex.c **** 				ihex_addr = 0;
+ 631               	.LM68:
+ 632 0094 1092 0000 		sts ihex_addr+1,__zero_reg__
+ 633 0098 1092 0000 		sts ihex_addr,__zero_reg__
+ 189:bootloader/ihex.c **** 				ihex_dataidx = 0;
+ 635               	.LM69:
+ 636 009c 1092 0000 		sts ihex_dataidx+1,__zero_reg__
+ 637 00a0 1092 0000 		sts ihex_dataidx,__zero_reg__
+ 190:bootloader/ihex.c **** 				ihex_linestate = IHEX_LENH;
+ 639               	.LM70:
+ 640 00a4 82E0      		ldi r24,lo8(2)
+ 641 00a6 00C0      		rjmp .L70
+ 642               	.L72:
+ 194:bootloader/ihex.c **** 			ihex_len = ihex_ascii2val(c) << 4;
+ 644               	.LM71:
+ 645 00a8 0E94 0000 		call ihex_ascii2val
+ 646 00ac 8295      		swap r24
+ 647 00ae 807F      		andi r24,lo8(-16)
+ 648 00b0 8093 0000 		sts ihex_len,r24
+ 195:bootloader/ihex.c **** 			ihex_linestate = IHEX_LENL;
+ 650               	.LM72:
+ 651 00b4 83E0      		ldi r24,lo8(3)
+ 652 00b6 00C0      		rjmp .L70
+ 653               	.L37:
+ 198:bootloader/ihex.c **** 			ihex_len += ihex_ascii2val(c);
+ 655               	.LM73:
+ 656 00b8 0E94 0000 		call ihex_ascii2val
+ 657 00bc 9091 0000 		lds r25,ihex_len
+ 658 00c0 980F      		add r25,r24
+ 659 00c2 9093 0000 		sts ihex_len,r25
+ 199:bootloader/ihex.c **** 			ihex_checksum = ihex_len;			// start calculating the checksum
+ 661               	.LM74:
+ 662 00c6 9093 0000 		sts ihex_checksum,r25
+ 200:bootloader/ihex.c **** 			if ( ihex_len <= IHEX_DATAMAX ) {
+ 664               	.LM75:
+ 665 00ca 9131      		cpi r25,lo8(17)
+ 666 00cc 00F4      		brsh .L48
+ 201:bootloader/ihex.c **** 				ihex_linestate = IHEX_ADDR;
+ 668               	.LM76:
+ 669 00ce 84E0      		ldi r24,lo8(4)
+ 670 00d0 00C0      		rjmp .L70
+ 671               	.L48:
+ 203:bootloader/ihex.c **** 				ihex_linestate = IHEX_START;
+ 673               	.LM77:
+ 674 00d2 81E0      		ldi r24,lo8(1)
+ 675 00d4 8093 0000 		sts ihex_linestate,r24
+ 204:bootloader/ihex.c **** 				return IHEX_ERRLEN;
+ 677               	.LM78:
+ 678 00d8 82E0      		ldi r24,lo8(2)
+ 679 00da 00C0      		rjmp .L35
+ 680               	.L38:
+ 209:bootloader/ihex.c **** 			ihex_addr += ihex_ascii2val(c);		// add the current nibble
+ 682               	.LM79:
+ 683 00dc 0E94 0000 		call ihex_ascii2val
+ 208:bootloader/ihex.c **** 			ihex_addr <<= 4;					// shift the result of the nibbles before
+ 685               	.LM80:
+ 686 00e0 2091 0000 		lds r18,ihex_addr
+ 687 00e4 3091 0000 		lds r19,ihex_addr+1
+ 688 00e8 04E0      		ldi r16,4
+ 689 00ea 220F      	1:	lsl r18
+ 690 00ec 331F      		rol r19
+ 691 00ee 0A95      		dec r16
+ 692 00f0 01F4      		brne 1b
+ 209:bootloader/ihex.c **** 			ihex_addr += ihex_ascii2val(c);		// add the current nibble
+ 694               	.LM81:
+ 695 00f2 280F      		add r18,r24
+ 696 00f4 311D      		adc r19,__zero_reg__
+ 697 00f6 3093 0000 		sts ihex_addr+1,r19
+ 698 00fa 2093 0000 		sts ihex_addr,r18
+ 210:bootloader/ihex.c **** 			if ( !(ihex_addrbyte & 0x01) ) {	// calc checksum for second and forth byte of addr
+ 700               	.LM82:
+ 701 00fe 8091 0000 		lds r24,ihex_addrbyte
+ 702 0102 80FD      		sbrc r24,0
+ 703 0104 00C0      		rjmp .L49
+ 211:bootloader/ihex.c **** 				ihex_checksum += (ihex_addr & 0xff);
+ 705               	.LM83:
+ 706 0106 9091 0000 		lds r25,ihex_checksum
+ 707 010a 920F      		add r25,r18
+ 708 010c 9093 0000 		sts ihex_checksum,r25
+ 709               	.L49:
+ 213:bootloader/ihex.c **** 			if ( !(ihex_addrbyte--) )			// last byte of address processed?
+ 711               	.LM84:
+ 712 0110 982F      		mov r25,r24
+ 713 0112 9150      		subi r25,lo8(-(-1))
+ 714 0114 9093 0000 		sts ihex_addrbyte,r25
+ 715 0118 8823      		tst r24
+ 716 011a 01F0      		breq .+2
+ 717 011c 00C0      		rjmp .L63
+ 214:bootloader/ihex.c **** 				ihex_linestate = IHEX_TYPEH;	// go to next state
+ 719               	.LM85:
+ 720 011e 85E0      		ldi r24,lo8(5)
+ 721 0120 00C0      		rjmp .L70
+ 722               	.L73:
+ 217:bootloader/ihex.c **** 			ihex_type = ihex_ascii2val(c) << 4;
+ 724               	.LM86:
+ 725 0122 0E94 0000 		call ihex_ascii2val
+ 726 0126 8295      		swap r24
+ 727 0128 807F      		andi r24,lo8(-16)
+ 728 012a 8093 0000 		sts ihex_type,r24
+ 218:bootloader/ihex.c **** 			ihex_linestate = IHEX_TYPEL;
+ 730               	.LM87:
+ 731 012e 86E0      		ldi r24,lo8(6)
+ 732 0130 00C0      		rjmp .L70
+ 733               	.L40:
+ 221:bootloader/ihex.c **** 			ihex_type += ihex_ascii2val(c);
+ 735               	.LM88:
+ 736 0132 0E94 0000 		call ihex_ascii2val
+ 737 0136 9091 0000 		lds r25,ihex_type
+ 738 013a 980F      		add r25,r24
+ 739 013c 9093 0000 		sts ihex_type,r25
+ 222:bootloader/ihex.c **** 			ihex_checksum += ihex_type;			// calculate the checksum
+ 741               	.LM89:
+ 742 0140 8091 0000 		lds r24,ihex_checksum
+ 743 0144 890F      		add r24,r25
+ 744 0146 8093 0000 		sts ihex_checksum,r24
+ 223:bootloader/ihex.c **** 			ihex_linestate = ( ihex_len )?IHEX_DATAH:IHEX_CHECKH;
+ 746               	.LM90:
+ 747 014a 8091 0000 		lds r24,ihex_len
+ 748 014e 8823      		tst r24
+ 749 0150 01F0      		breq .L65
+ 750 0152 00C0      		rjmp .L71
+ 751               	.L41:
+ 226:bootloader/ihex.c **** 			ihex_data[ihex_dataidx] = ihex_ascii2val(c) << 4;
+ 753               	.LM91:
+ 754 0154 0E94 0000 		call ihex_ascii2val
+ 755 0158 E091 0000 		lds r30,ihex_dataidx
+ 756 015c F091 0000 		lds r31,ihex_dataidx+1
+ 757 0160 E050      		subi r30,lo8(-(ihex_data))
+ 758 0162 F040      		sbci r31,hi8(-(ihex_data))
+ 759 0164 8295      		swap r24
+ 760 0166 807F      		andi r24,lo8(-16)
+ 761 0168 8083      		st Z,r24
+ 227:bootloader/ihex.c **** 			ihex_linestate = IHEX_DATAL;
+ 763               	.LM92:
+ 764 016a 88E0      		ldi r24,lo8(8)
+ 765 016c 00C0      		rjmp .L70
+ 766               	.L74:
+ 230:bootloader/ihex.c **** 			ihex_data[ihex_dataidx] += ihex_ascii2val(c);
+ 768               	.LM93:
+ 769 016e C091 0000 		lds r28,ihex_dataidx
+ 770 0172 D091 0000 		lds r29,ihex_dataidx+1
+ 771 0176 0E94 0000 		call ihex_ascii2val
+ 772 017a FE01      		movw r30,r28
+ 773 017c E050      		subi r30,lo8(-(ihex_data))
+ 774 017e F040      		sbci r31,hi8(-(ihex_data))
+ 775 0180 9081      		ld r25,Z
+ 776 0182 980F      		add r25,r24
+ 777 0184 9083      		st Z,r25
+ 231:bootloader/ihex.c **** 			ihex_checksum += ihex_data[ihex_dataidx];
+ 779               	.LM94:
+ 780 0186 8091 0000 		lds r24,ihex_checksum
+ 781 018a 890F      		add r24,r25
+ 782 018c 8093 0000 		sts ihex_checksum,r24
+ 233:bootloader/ihex.c **** 			ihex_linestate = ( ++ihex_dataidx < ihex_len )?IHEX_DATAH:IHEX_CHECKH;
+ 784               	.LM95:
+ 785 0190 2196      		adiw r28,1
+ 786 0192 D093 0000 		sts ihex_dataidx+1,r29
+ 787 0196 C093 0000 		sts ihex_dataidx,r28
+ 788 019a 8091 0000 		lds r24,ihex_len
+ 789 019e 90E0      		ldi r25,lo8(0)
+ 790 01a0 C817      		cp r28,r24
+ 791 01a2 D907      		cpc r29,r25
+ 792 01a4 00F4      		brsh .L65
+ 793               	.L71:
+ 794 01a6 87E0      		ldi r24,lo8(7)
+ 795 01a8 00C0      		rjmp .L70
+ 796               	.L65:
+ 797 01aa 89E0      		ldi r24,lo8(9)
+ 798 01ac 00C0      		rjmp .L70
+ 799               	.L43:
+ 236:bootloader/ihex.c **** 			ihex_check = ihex_ascii2val(c) << 4;
+ 801               	.LM96:
+ 802 01ae 0E94 0000 		call ihex_ascii2val
+ 803 01b2 8295      		swap r24
+ 804 01b4 807F      		andi r24,lo8(-16)
+ 805 01b6 8093 0000 		sts ihex_check,r24
+ 237:bootloader/ihex.c **** 			ihex_linestate = IHEX_CHECKL;
+ 807               	.LM97:
+ 808 01ba 8AE0      		ldi r24,lo8(10)
+ 809               	.L70:
+ 810 01bc 8093 0000 		sts ihex_linestate,r24
+ 811 01c0 00C0      		rjmp .L63
+ 812               	.L44:
+ 240:bootloader/ihex.c **** 			ihex_check += ihex_ascii2val(c);
+ 814               	.LM98:
+ 815 01c2 0E94 0000 		call ihex_ascii2val
+ 816 01c6 9091 0000 		lds r25,ihex_check
+ 817 01ca 980F      		add r25,r24
+ 818 01cc 9093 0000 		sts ihex_check,r25
+ 241:bootloader/ihex.c **** 			ihex_checksum += ihex_check;		// calculate the checksum
+ 820               	.LM99:
+ 821 01d0 8091 0000 		lds r24,ihex_checksum
+ 822 01d4 890F      		add r24,r25
+ 823 01d6 8093 0000 		sts ihex_checksum,r24
+ 242:bootloader/ihex.c **** 			if ( ihex_checksum ) {				// checksum should be zero in this state
+ 825               	.LM100:
+ 826 01da 8823      		tst r24
+ 827 01dc 01F0      		breq .L52
+ 244:bootloader/ihex.c **** 				ihex_linestate = IHEX_START;
+ 829               	.LM101:
+ 830 01de 81E0      		ldi r24,lo8(1)
+ 831 01e0 8093 0000 		sts ihex_linestate,r24
+ 245:bootloader/ihex.c **** 				return IHEX_ERRCHECK;
+ 833               	.LM102:
+ 834 01e4 84E0      		ldi r24,lo8(4)
+ 835 01e6 00C0      		rjmp .L35
+ 836               	.L52:
+ 247:bootloader/ihex.c **** 			ihex_linestate = IHEX_END;
+ 838               	.LM103:
+ 839 01e8 8BE0      		ldi r24,lo8(11)
+ 840 01ea 00C0      		rjmp .L70
+ 841               	.L32:
+ 250:bootloader/ihex.c **** 			ihex_linestate = IHEX_START;		// we are starting a new line
+ 843               	.LM104:
+ 844 01ec 91E0      		ldi r25,lo8(1)
+ 845 01ee 9093 0000 		sts ihex_linestate,r25
+ 251:bootloader/ihex.c **** 			if ( c == 0x0a || c == 0x0d ) {		// line is terminated
+ 847               	.LM105:
+ 848 01f2 8A30      		cpi r24,lo8(10)
+ 849 01f4 01F0      		breq .L53
+ 251:bootloader/ihex.c **** 			if ( c == 0x0a || c == 0x0d ) {		// line is terminated
+ 851               	.LM106:
+ 852 01f6 8D30      		cpi r24,lo8(13)
+ 853 01f8 01F0      		breq .+2
+ 854 01fa 00C0      		rjmp .L66
+ 855               	.L53:
+ 253:bootloader/ihex.c **** 				sreg = SREG;
+ 857               	.LM107:
+ 858 01fc FFB6      		in r15,__SREG__
+ 254:bootloader/ihex.c **** 				cli();
+ 860               	.LM108:
+ 861               	/* #APP */
+ 862               	 ;  254 "bootloader/ihex.c" 1
+ 863 01fe F894      		cli
+ 864               	 ;  0 "" 2
+ 256:bootloader/ihex.c **** 				switch ( ihex_type ) {
+ 866               	.LM109:
+ 867               	/* #NOAPP */
+ 868 0200 8091 0000 		lds r24,ihex_type
+ 869 0204 8130      		cpi r24,lo8(1)
+ 870 0206 01F0      		breq .L56
+ 871 0208 8130      		cpi r24,lo8(1)
+ 872 020a 00F0      		brlo .L55
+ 873 020c 8230      		cpi r24,lo8(2)
+ 874 020e 01F4      		brne .+2
+ 875 0210 00C0      		rjmp .L57
+ 876 0212 8330      		cpi r24,lo8(3)
+ 877 0214 01F0      		breq .+2
+ 878 0216 00C0      		rjmp .L68
+ 879 0218 00C0      		rjmp .L69
+ 880               	.L55:
+ 881 021a C0E0      		ldi r28,lo8(ihex_data)
+ 882 021c D0E0      		ldi r29,hi8(ihex_data)
+ 883 021e 00E0      		ldi r16,lo8(0)
+ 884 0220 10E0      		ldi r17,hi8(0)
+ 885 0222 80E0      		ldi r24,lo8(0)
+ 886 0224 00C0      		rjmp .L59
+ 887               	.L60:
+ 259:bootloader/ihex.c **** 				  			rc = ihex_program (ihex_addr + ihex_addr_offset, ihex_data[i], ihex_data[i+1]);
+ 889               	.LM110:
+ 890 0226 6091 0000 		lds r22,ihex_addr
+ 891 022a 7091 0000 		lds r23,ihex_addr+1
+ 892 022e 80E0      		ldi r24,lo8(0)
+ 893 0230 90E0      		ldi r25,hi8(0)
+ 894 0232 2091 0000 		lds r18,ihex_addr_offset
+ 895 0236 3091 0000 		lds r19,ihex_addr_offset+1
+ 896 023a 4091 0000 		lds r20,ihex_addr_offset+2
+ 897 023e 5091 0000 		lds r21,ihex_addr_offset+3
+ 898 0242 620F      		add r22,r18
+ 899 0244 731F      		adc r23,r19
+ 900 0246 841F      		adc r24,r20
+ 901 0248 951F      		adc r25,r21
+ 902 024a 4881      		ld r20,Y
+ 903 024c 2981      		ldd r18,Y+1
+ 904 024e 0E94 0000 		call ihex_program
+ 258:bootloader/ihex.c **** 						for ( i=0; (i<ihex_len) && (!rc); i+=2, ihex_addr+=2 )
+ 906               	.LM111:
+ 907 0252 0E5F      		subi r16,lo8(-(2))
+ 908 0254 1F4F      		sbci r17,hi8(-(2))
+ 909 0256 2091 0000 		lds r18,ihex_addr
+ 910 025a 3091 0000 		lds r19,ihex_addr+1
+ 911 025e 2E5F      		subi r18,lo8(-(2))
+ 912 0260 3F4F      		sbci r19,hi8(-(2))
+ 913 0262 3093 0000 		sts ihex_addr+1,r19
+ 914 0266 2093 0000 		sts ihex_addr,r18
+ 915 026a 2296      		adiw r28,2
+ 916               	.L59:
+ 917 026c 2091 0000 		lds r18,ihex_len
+ 918 0270 30E0      		ldi r19,lo8(0)
+ 919 0272 0217      		cp r16,r18
+ 920 0274 1307      		cpc r17,r19
+ 921 0276 04F4      		brge .L54
+ 258:bootloader/ihex.c **** 						for ( i=0; (i<ihex_len) && (!rc); i+=2, ihex_addr+=2 )
+ 923               	.LM112:
+ 924 0278 8823      		tst r24
+ 925 027a 01F0      		breq .L60
+ 926 027c 00C0      		rjmp .L54
+ 927               	.L56:
+ 262:bootloader/ihex.c **** 				  		rc = ihex_program (ihex_addr + ihex_addr_offset, 0, 0);	// complete flash process of last p
+ 929               	.LM113:
+ 930 027e 6091 0000 		lds r22,ihex_addr
+ 931 0282 7091 0000 		lds r23,ihex_addr+1
+ 932 0286 80E0      		ldi r24,lo8(0)
+ 933 0288 90E0      		ldi r25,hi8(0)
+ 934 028a 2091 0000 		lds r18,ihex_addr_offset
+ 935 028e 3091 0000 		lds r19,ihex_addr_offset+1
+ 936 0292 4091 0000 		lds r20,ihex_addr_offset+2
+ 937 0296 5091 0000 		lds r21,ihex_addr_offset+3
+ 938 029a 620F      		add r22,r18
+ 939 029c 731F      		adc r23,r19
+ 940 029e 841F      		adc r24,r20
+ 941 02a0 951F      		adc r25,r21
+ 942 02a2 40E0      		ldi r20,lo8(0)
+ 943 02a4 20E0      		ldi r18,lo8(0)
+ 944 02a6 0E94 0000 		call ihex_program
+ 263:bootloader/ihex.c **** 				  		break;
+ 946               	.LM114:
+ 947 02aa 00C0      		rjmp .L54
+ 948               	.L57:
+ 265:bootloader/ihex.c **** 				  		ihex_addr_offset = ((uint16_t)ihex_data[0] << 8) + ihex_data[1];
+ 950               	.LM115:
+ 951 02ac 9091 0000 		lds r25,ihex_data
+ 952 02b0 80E0      		ldi r24,lo8(0)
+ 953 02b2 2091 0000 		lds r18,ihex_data+1
+ 954 02b6 820F      		add r24,r18
+ 955 02b8 911D      		adc r25,__zero_reg__
+ 956 02ba A0E0      		ldi r26,lo8(0)
+ 957 02bc B0E0      		ldi r27,hi8(0)
+ 266:bootloader/ihex.c **** 				  		ihex_addr_offset <<= 4;
+ 959               	.LM116:
+ 960 02be 14E0      		ldi r17,4
+ 961 02c0 880F      	1:	lsl r24
+ 962 02c2 991F      		rol r25
+ 963 02c4 AA1F      		rol r26
+ 964 02c6 BB1F      		rol r27
+ 965 02c8 1A95      		dec r17
+ 966 02ca 01F4      		brne 1b
+ 967 02cc 8093 0000 		sts ihex_addr_offset,r24
+ 968 02d0 9093 0000 		sts ihex_addr_offset+1,r25
+ 969 02d4 A093 0000 		sts ihex_addr_offset+2,r26
+ 970 02d8 B093 0000 		sts ihex_addr_offset+3,r27
+ 971               	.L69:
+ 267:bootloader/ihex.c **** 				  		rc = IHEX_NOERR;
+ 973               	.LM117:
+ 974 02dc 80E0      		ldi r24,lo8(0)
+ 268:bootloader/ihex.c **** 				  		break;
+ 976               	.LM118:
+ 977 02de 00C0      		rjmp .L54
+ 978               	.L68:
+ 274:bootloader/ihex.c **** 				  		rc = IHEX_ERRTYPE;		// other intel commands are not supported
+ 980               	.LM119:
+ 981 02e0 86E0      		ldi r24,lo8(6)
+ 982               	.L54:
+ 277:bootloader/ihex.c **** 				SREG = sreg;
+ 984               	.LM120:
+ 985 02e2 FFBE      		out __SREG__,r15
+ 278:bootloader/ihex.c **** 				return rc;
+ 987               	.LM121:
+ 988 02e4 00C0      		rjmp .L35
+ 989               	.L61:
+ 284:bootloader/ihex.c **** 			return IHEX_ERRSTATE;
+ 991               	.LM122:
+ 992 02e6 83E0      		ldi r24,lo8(3)
+ 993 02e8 00C0      		rjmp .L35
+ 994               	.L63:
+ 287:bootloader/ihex.c **** 	return IHEX_NOERR;
+ 996               	.LM123:
+ 997 02ea 80E0      		ldi r24,lo8(0)
+ 998 02ec 00C0      		rjmp .L35
+ 999               	.L66:
+ 280:bootloader/ihex.c **** 				return IHEX_ERRLINE;
+ 1001               	.LM124:
+ 1002 02ee 85E0      		ldi r24,lo8(5)
+ 1003               	.L35:
+ 1004               	/* epilogue start */
+ 288:bootloader/ihex.c **** }
+ 1006               	.LM125:
+ 1007 02f0 DF91      		pop r29
+ 1008 02f2 CF91      		pop r28
+ 1009 02f4 1F91      		pop r17
+ 1010 02f6 0F91      		pop r16
+ 1011 02f8 FF90      		pop r15
+ 1012 02fa 0895      		ret
+ 1019               	.Lscope6:
+ 1021               		.stabd	78,0,0
+ 1022               	.global	ihex_lastpage
+ 1023               		.data
+ 1026               	ihex_lastpage:
+ 1027 0000 FFFF      		.word	-1
+ 1028               	.global	ihex_linestate
+ 1031               	ihex_linestate:
+ 1032 0002 01        		.byte	1
+ 1033               		.comm myip,4,1
+ 1034               		.comm IP_id_counter,2,1
+ 1035               		.comm eth_buffer,1201,1
+ 1036               		.comm eth_len,2,1
+ 1037               		.comm arp_entry,50,1
+ 1038               		.comm ihex_addrbyte,1,1
+ 1039               		.comm ihex_len,1,1
+ 1040               		.comm ihex_type,1,1
+ 1041               		.comm ihex_data,16,1
+ 1042               		.comm ihex_dataidx,2,1
+ 1043               		.comm ihex_checksum,1,1
+ 1044               		.comm ihex_addr,2,1
+ 1045               		.comm ihex_addr_offset,4,1
+ 1046               		.comm ihex_check,1,1
+ 1063               		.text
+ 1065               	.Letext0:
+ 1066               	.global __do_copy_data
+ 1067               	.global __do_clear_bss
+DEFINED SYMBOLS
+                            *ABS*:00000000 ihex.c
+     /tmp/ccuQxFpr.s:2      *ABS*:0000003f __SREG__
+     /tmp/ccuQxFpr.s:3      *ABS*:0000003e __SP_H__
+     /tmp/ccuQxFpr.s:4      *ABS*:0000003d __SP_L__
+     /tmp/ccuQxFpr.s:5      *ABS*:00000034 __CCP__
+     /tmp/ccuQxFpr.s:6      *ABS*:00000000 __tmp_reg__
+     /tmp/ccuQxFpr.s:7      *ABS*:00000001 __zero_reg__
+     /tmp/ccuQxFpr.s:119    .text.ihex_intvector:00000000 ihex_intvector
+     /tmp/ccuQxFpr.s:165    .text.ihex_appstart:00000000 ihex_appstart
+     /tmp/ccuQxFpr.s:234    .text.ihex_ascii2val:00000000 ihex_ascii2val
+     /tmp/ccuQxFpr.s:266    .text.ihex_init:00000000 ihex_init
+     /tmp/ccuQxFpr.s:1031   .data:00000002 ihex_linestate
+     /tmp/ccuQxFpr.s:294    .text.ihex_program:00000000 ihex_program
+     /tmp/ccuQxFpr.s:1026   .data:00000000 ihex_lastpage
+                            *COM*:00000001 ihex_type
+                            *COM*:00000001 ihex_len
+     /tmp/ccuQxFpr.s:525    .text.ihex_flash:00000000 ihex_flash
+                            *COM*:00000001 ihex_addrbyte
+                            *COM*:00000002 ihex_addr
+                            *COM*:00000002 ihex_dataidx
+                            *COM*:00000001 ihex_checksum
+                            *COM*:00000010 ihex_data
+                            *COM*:00000001 ihex_check
+                            *COM*:00000004 ihex_addr_offset
+                            *COM*:00000004 myip
+                            *COM*:00000002 IP_id_counter
+                            *COM*:000004b1 eth_buffer
+                            *COM*:00000002 eth_len
+                            *COM*:00000032 arp_entry
+
+UNDEFINED SYMBOLS
+toupper
+__do_copy_data
+__do_clear_bss

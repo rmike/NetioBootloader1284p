@@ -1,0 +1,687 @@
+   1               		.file	"console.c"
+   2               	__SREG__ = 0x3f
+   3               	__SP_H__ = 0x3e
+   4               	__SP_L__ = 0x3d
+   5               	__CCP__ = 0x34
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+  10               		.text
+  11               	.Ltext0:
+ 110               		.section	.text.console_init,"ax",@progbits
+ 112               	.global	console_init
+ 114               	console_init:
+ 115               		.stabd	46,0,0
+   1:console.c     **** /*----------------------------------------------------------------------------
+   2:console.c     ****  Copyright:      Jens Mundhenke jens (a) mundhenke.info
+   3:console.c     ****  Author:         Jens Mundhenke
+   4:console.c     ****  Remarks:
+   5:console.c     ****  known Problems: none
+   6:console.c     ****  Version:        25.01.2009
+   7:console.c     ****  				 13.02.2009 Simplified syslog
+   8:console.c     ****  Description:    universal console output functions for AVR
+   9:console.c     ****  				 based on Ulrich Radig's Webserver
+  10:console.c     **** 				 input has to be handled by device dependent functions
+  11:console.c     **** 
+  12:console.c     ****  Dieses Programm ist freie Software. Sie können es unter den Bedingungen der
+  13:console.c     ****  GNU General Public License, wie von der Free Software Foundation veröffentlicht,
+  14:console.c     ****  weitergeben und/oder modifizieren, entweder gemäß Version 2 der Lizenz oder
+  15:console.c     ****  (nach Ihrer Option) jeder späteren Version.
+  16:console.c     **** 
+  17:console.c     ****  Die Veröffentlichung dieses Programms erfolgt in der Hoffnung,
+  18:console.c     ****  daß es Ihnen von Nutzen sein wird, aber OHNE IRGENDEINE GARANTIE,
+  19:console.c     ****  sogar ohne die implizite Garantie der MARKTREIFE oder der VERWENDBARKEIT
+  20:console.c     ****  FÜR EINEN BESTIMMTEN ZWECK. Details finden Sie in der GNU General Public License.
+  21:console.c     **** 
+  22:console.c     ****  Sie sollten eine Kopie der GNU General Public License zusammen mit diesem
+  23:console.c     ****  Programm erhalten haben.
+  24:console.c     ****  Falls nicht, schreiben Sie an die Free Software Foundation,
+  25:console.c     ****  Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
+  26:console.c     **** ------------------------------------------------------------------------------*/
+  27:console.c     **** 
+  28:console.c     **** #include <stdlib.h>
+  29:console.c     **** #include <stdarg.h>
+  30:console.c     **** #include <ctype.h>
+  31:console.c     **** #include <string.h>
+  32:console.c     **** #include <avr/pgmspace.h>
+  33:console.c     **** 
+  34:console.c     **** #include "limits.h"
+  35:console.c     **** #include "config.h"
+  36:console.c     **** #include "console.h"
+  37:console.c     **** 
+  38:console.c     **** //----------------------------------------------------------------------------
+  39:console.c     **** #define CONSOLE_DEBUG(format, args...)	\
+  40:console.c     **** 		{CONSOLE_PUSH(CONSOLE_SYSLOG);\
+  41:console.c     **** 		 console_write_P(format , ## args);\
+  42:console.c     **** 		 CONSOLE_POP;}
+  43:console.c     **** 
+  44:console.c     **** 	// kein Debug
+  45:console.c     **** 	//#define TELNET_DEBUG(...)
+  46:console.c     **** 
+  47:console.c     **** 
+  48:console.c     **** // the supported devices should be included here
+  49:console.c     **** #if USE_TELNET
+  50:console.c     **** #include "telnetd.h"
+  51:console.c     **** #endif
+  52:console.c     **** #if USE_USART
+  53:console.c     **** #include "usart.h"
+  54:console.c     **** #endif
+  55:console.c     **** #if USE_SYSLOG
+  56:console.c     **** #include "syslog.h"
+  57:console.c     **** #endif
+  58:console.c     **** 
+  59:console.c     **** #define CONSOLE_TX_BUFFERSIZE	60
+  60:console.c     **** 
+  61:console.c     **** char console_tx_buffer[CONSOLE_TX_BUFFERSIZE+1];	// plus 1 for string terminating 0
+  62:console.c     **** unsigned int console_tx_counter = 0;
+  63:console.c     **** 
+  64:console.c     **** char console_isinit = 0;			// Flag, dass das Modul initialisiert ist, vorher werden Ausgaben ignori
+  65:console.c     **** 
+  66:console.c     **** unsigned int console_mode;
+  67:console.c     **** unsigned int cm;
+  68:console.c     **** 
+  69:console.c     **** 
+  70:console.c     **** //----------------------------------------------------------------------------
+  71:console.c     **** //Initialisierung der console
+  72:console.c     **** void console_init (void)
+  73:console.c     **** {
+ 117               	.LM0:
+ 118               	.LFBB1:
+ 119               	/* prologue: function */
+ 120               	/* frame size = 0 */
+ 121               	/* stack size = 0 */
+ 122               	.L__stack_usage = 0
+  74:console.c     **** 	// Initialisiere Pufferverwaltung
+  75:console.c     **** 	console_tx_counter 	= 0;
+ 124               	.LM1:
+ 125 0000 1092 0000 		sts console_tx_counter+1,__zero_reg__
+ 126 0004 1092 0000 		sts console_tx_counter,__zero_reg__
+  76:console.c     **** 
+  77:console.c     **** 	// initiliaze device modules
+  78:console.c     **** 	#if USE_TELNET
+  79:console.c     **** 	if ( console_mode & CONSOLE_TELNET );
+  80:console.c     **** 		telnetd_init();
+  81:console.c     **** 	#endif
+  82:console.c     **** 	#if USE_USART
+  83:console.c     **** 	if ( console_mode & CONSOLE_USART );
+  84:console.c     **** //		usart_init(BAUDRATE);
+  85:console.c     **** 		usart_init();
+ 128               	.LM2:
+ 129 0008 0E94 0000 		call usart_init
+  86:console.c     **** 	#endif
+  87:console.c     **** 
+  88:console.c     **** 	console_isinit = 1;
+ 131               	.LM3:
+ 132 000c 81E0      		ldi r24,lo8(1)
+ 133 000e 8093 0000 		sts console_isinit,r24
+ 134               	/* epilogue start */
+  89:console.c     **** }
+ 136               	.LM4:
+ 137 0012 0895      		ret
+ 139               	.Lscope1:
+ 141               		.stabd	78,0,0
+ 142               		.section	.text.console_flush,"ax",@progbits
+ 144               	.global	console_flush
+ 146               	console_flush:
+ 147               		.stabd	46,0,0
+  90:console.c     **** 
+  91:console.c     **** 
+  92:console.c     **** //----------------------------------------------------------------------------
+  93:console.c     **** //Ausgabe eines Strings
+  94:console.c     **** void console_write_str(char *str)
+  95:console.c     **** {
+  96:console.c     **** 	while (str && *str)
+  97:console.c     **** 		console_write_char(*str++);
+  98:console.c     **** }
+  99:console.c     **** 
+ 100:console.c     **** 
+ 101:console.c     **** //----------------------------------------------------------------------------
+ 102:console.c     **** //Routine für die Ausgabe gepufferter Zeichen ueber zeilen-orientierte Devices
+ 103:console.c     **** void console_flush(void)
+ 104:console.c     **** {
+ 149               	.LM5:
+ 150               	.LFBB2:
+ 151               	/* prologue: function */
+ 152               	/* frame size = 0 */
+ 153               	/* stack size = 0 */
+ 154               	.L__stack_usage = 0
+ 105:console.c     **** 	if ( !console_tx_counter )		// buffer is empty
+ 156               	.LM6:
+ 157 0000 8091 0000 		lds r24,console_tx_counter
+ 158 0004 9091 0000 		lds r25,console_tx_counter+1
+ 159 0008 0097      		sbiw r24,0
+ 160 000a 01F0      		breq .L2
+ 106:console.c     **** 		return;
+ 107:console.c     **** 
+ 108:console.c     ****    	console_tx_buffer[console_tx_counter] = 0;		// terminate buffered string
+ 162               	.LM7:
+ 163 000c 8050      		subi r24,lo8(-(console_tx_buffer))
+ 164 000e 9040      		sbci r25,hi8(-(console_tx_buffer))
+ 165 0010 FC01      		movw r30,r24
+ 166 0012 1082      		st Z,__zero_reg__
+ 109:console.c     ****    	#if USE_TELNET
+ 110:console.c     **** 	if ( console_mode & CONSOLE_TELNET )
+ 111:console.c     **** 		telnetd_write_str ( console_tx_buffer );
+ 112:console.c     **** 	#endif
+ 113:console.c     **** 	#if USE_SYSLOG
+ 114:console.c     **** 	if ( console_mode & CONSOLE_SYSLOG )
+ 168               	.LM8:
+ 169 0014 8091 0000 		lds r24,console_mode
+ 170 0018 81FF      		sbrs r24,1
+ 171 001a 00C0      		rjmp .L4
+ 115:console.c     **** 		syslog_send ( console_tx_buffer );
+ 173               	.LM9:
+ 174 001c 80E0      		ldi r24,lo8(console_tx_buffer)
+ 175 001e 90E0      		ldi r25,hi8(console_tx_buffer)
+ 176 0020 0E94 0000 		call syslog_send
+ 177               	.L4:
+ 116:console.c     **** 	#endif
+ 117:console.c     **** 	console_tx_counter = 0;								// clear buffer
+ 179               	.LM10:
+ 180 0024 1092 0000 		sts console_tx_counter+1,__zero_reg__
+ 181 0028 1092 0000 		sts console_tx_counter,__zero_reg__
+ 182               	.L2:
+ 183 002c 0895      		ret
+ 185               	.Lscope2:
+ 187               		.stabd	78,0,0
+ 188               		.section	.text.console_write_char,"ax",@progbits
+ 191               	.global	console_write_char
+ 193               	console_write_char:
+ 194               		.stabd	46,0,0
+ 118:console.c     **** }
+ 119:console.c     **** 
+ 120:console.c     **** //----------------------------------------------------------------------------
+ 121:console.c     **** //Routine für die Ausgabe eines Zeichens ueber definierte Devices
+ 122:console.c     **** //
+ 123:console.c     **** void console_write_char(char c)
+ 124:console.c     **** {
+ 196               	.LM11:
+ 197               	.LFBB3:
+ 198 0000 1F93      		push r17
+ 199               	/* prologue: function */
+ 200               	/* frame size = 0 */
+ 201               	/* stack size = 1 */
+ 202               	.L__stack_usage = 1
+ 203 0002 182F      		mov r17,r24
+ 125:console.c     **** 	if ( !console_isinit )
+ 205               	.LM12:
+ 206 0004 8091 0000 		lds r24,console_isinit
+ 207 0008 8823      		tst r24
+ 208 000a 01F0      		breq .L5
+ 126:console.c     **** 		return;
+ 127:console.c     **** 
+ 128:console.c     **** 	#if USE_USART
+ 129:console.c     **** 	if ( console_mode & CONSOLE_USART )
+ 210               	.LM13:
+ 211 000c 8091 0000 		lds r24,console_mode
+ 212 0010 80FF      		sbrs r24,0
+ 213 0012 00C0      		rjmp .L7
+ 130:console.c     **** 		usart_write_char (c);
+ 215               	.LM14:
+ 216 0014 812F      		mov r24,r17
+ 217 0016 0E94 0000 		call usart_write_char
+ 218               	.L7:
+ 131:console.c     **** 	#endif
+ 132:console.c     **** 
+ 133:console.c     **** 	if ( console_mode & (CONSOLE_TELNET | CONSOLE_SYSLOG) ) {
+ 220               	.LM15:
+ 221 001a 2091 0000 		lds r18,console_mode
+ 222 001e 3091 0000 		lds r19,console_mode+1
+ 223 0022 2670      		andi r18,lo8(6)
+ 224 0024 3070      		andi r19,hi8(6)
+ 225 0026 2115      		cp r18,__zero_reg__
+ 226 0028 3105      		cpc r19,__zero_reg__
+ 227 002a 01F0      		breq .L5
+ 134:console.c     **** 		console_tx_buffer[console_tx_counter++] = c;
+ 229               	.LM16:
+ 230 002c 2091 0000 		lds r18,console_tx_counter
+ 231 0030 3091 0000 		lds r19,console_tx_counter+1
+ 232 0034 F901      		movw r30,r18
+ 233 0036 E050      		subi r30,lo8(-(console_tx_buffer))
+ 234 0038 F040      		sbci r31,hi8(-(console_tx_buffer))
+ 235 003a 1083      		st Z,r17
+ 236 003c 2F5F      		subi r18,lo8(-(1))
+ 237 003e 3F4F      		sbci r19,hi8(-(1))
+ 238 0040 3093 0000 		sts console_tx_counter+1,r19
+ 239 0044 2093 0000 		sts console_tx_counter,r18
+ 135:console.c     **** 	    if ( (console_tx_counter >= CONSOLE_TX_BUFFERSIZE - 1) || (c == '\n') ) {	// Buffer ist voll o
+ 241               	.LM17:
+ 242 0048 2B33      		cpi r18,59
+ 243 004a 3105      		cpc r19,__zero_reg__
+ 244 004c 00F4      		brsh .L8
+ 246               	.LM18:
+ 247 004e 1A30      		cpi r17,lo8(10)
+ 248 0050 01F4      		brne .L5
+ 249               	.L8:
+ 136:console.c     **** 	    	console_flush();
+ 251               	.LM19:
+ 252 0052 0E94 0000 		call console_flush
+ 253               	.L5:
+ 254               	/* epilogue start */
+ 137:console.c     **** 		}
+ 138:console.c     **** 	}
+ 139:console.c     **** }
+ 256               	.LM20:
+ 257 0056 1F91      		pop r17
+ 258 0058 0895      		ret
+ 260               	.Lscope3:
+ 262               		.stabd	78,0,0
+ 263               		.section	.text.console_write_str,"ax",@progbits
+ 265               	.global	console_write_str
+ 267               	console_write_str:
+ 268               		.stabd	46,0,0
+  95:console.c     **** {
+ 270               	.LM21:
+ 271               	.LFBB4:
+ 272 0000 EF92      		push r14
+ 273 0002 FF92      		push r15
+ 274 0004 CF93      		push r28
+ 275 0006 DF93      		push r29
+ 276               	/* prologue: function */
+ 277               	/* frame size = 0 */
+ 278               	/* stack size = 4 */
+ 279               	.L__stack_usage = 4
+  95:console.c     **** {
+ 281               	.LM22:
+ 282 0008 E82E      		mov r14,r24
+ 283 000a E701      		movw r28,r14
+ 284 000c 7E01      		movw r14,r28
+ 285 000e F92E      		mov r15,r25
+ 286 0010 E701      		movw r28,r14
+  96:console.c     **** 	while (str && *str)
+ 288               	.LM23:
+ 289 0012 00C0      		rjmp .L10
+ 290               	.L12:
+  97:console.c     **** 		console_write_char(*str++);
+ 292               	.LM24:
+ 293 0014 0E94 0000 		call console_write_char
+ 294               	.L10:
+  96:console.c     **** 	while (str && *str)
+ 296               	.LM25:
+ 297 0018 2097      		sbiw r28,0
+ 298 001a 01F0      		breq .L9
+  96:console.c     **** 	while (str && *str)
+ 300               	.LM26:
+ 301 001c 8991      		ld r24,Y+
+ 302 001e 8823      		tst r24
+ 303 0020 01F4      		brne .L12
+ 304               	.L9:
+ 305               	/* epilogue start */
+  98:console.c     **** }
+ 307               	.LM27:
+ 308 0022 DF91      		pop r29
+ 309 0024 CF91      		pop r28
+ 310 0026 FF90      		pop r15
+ 311 0028 EF90      		pop r14
+ 312 002a 0895      		ret
+ 314               	.Lscope4:
+ 316               		.stabd	78,0,0
+ 317               		.section	.text.console_write_P,"ax",@progbits
+ 320               	.global	console_write_P
+ 322               	console_write_P:
+ 323               		.stabd	46,0,0
+ 140:console.c     **** 
+ 141:console.c     **** 
+ 142:console.c     **** //------------------------------------------------------------------------------
+ 143:console.c     **** void console_write_P (const char *Buffer,...)
+ 144:console.c     **** {
+ 325               	.LM28:
+ 326               	.LFBB5:
+ 327 0000 AF92      		push r10
+ 328 0002 BF92      		push r11
+ 329 0004 CF92      		push r12
+ 330 0006 DF92      		push r13
+ 331 0008 EF92      		push r14
+ 332 000a FF92      		push r15
+ 333 000c 0F93      		push r16
+ 334 000e 1F93      		push r17
+ 335 0010 DF93      		push r29
+ 336 0012 CF93      		push r28
+ 337 0014 CDB7      		in r28,__SP_L__
+ 338 0016 DEB7      		in r29,__SP_H__
+ 339 0018 6697      		sbiw r28,22
+ 340 001a 0FB6      		in __tmp_reg__,__SREG__
+ 341 001c F894      		cli
+ 342 001e DEBF      		out __SP_H__,r29
+ 343 0020 0FBE      		out __SREG__,__tmp_reg__
+ 344 0022 CDBF      		out __SP_L__,r28
+ 345               	/* prologue: function */
+ 346               	/* frame size = 22 */
+ 347               	/* stack size = 32 */
+ 348               	.L__stack_usage = 32
+ 349 0024 9E01      		movw r18,r28
+ 350 0026 2D5D      		subi r18,lo8(-(35))
+ 351 0028 3F4F      		sbci r19,hi8(-(35))
+ 352 002a F901      		movw r30,r18
+ 353 002c 0191      		ld r16,Z+
+ 354 002e 1191      		ld r17,Z+
+ 355 0030 9F01      		movw r18,r30
+ 145:console.c     **** 	va_list ap;
+ 146:console.c     **** 	va_start (ap, Buffer);
+ 147:console.c     **** 
+ 148:console.c     **** 	int format_flag;
+ 149:console.c     **** 	char str_buffer[20];
+ 150:console.c     **** 	char move = 0;
+ 357               	.LM29:
+ 358 0032 BB24      		clr r11
+ 151:console.c     **** 	char len, b;
+ 152:console.c     **** 	char by;
+ 153:console.c     **** 	char *ptr;
+ 154:console.c     **** 
+ 155:console.c     **** 	//Ausgabe der Zeichen
+ 156:console.c     ****     for(;;) {
+ 157:console.c     **** 
+ 158:console.c     **** 		by = *Buffer++;
+ 159:console.c     **** 		if(by==0) break; // end of format string
+ 160:console.c     **** 
+ 161:console.c     **** 		if (by == '%') {
+ 162:console.c     **** 
+ 163:console.c     **** 			by = *Buffer++;
+ 164:console.c     **** 
+ 165:console.c     **** 			while (isdigit(by)) {				// potential overflow of move
+ 166:console.c     **** 				move = by - '0' + move * 10;
+ 167:console.c     **** 
+ 168:console.c     ****  				by = *Buffer++;
+ 169:console.c     **** 			}
+ 170:console.c     **** 
+ 171:console.c     **** 			switch (by) {
+ 172:console.c     ****                 case 's':
+ 173:console.c     ****                     ptr = va_arg(ap,char *);
+ 174:console.c     ****                     console_write_str(ptr);
+ 175:console.c     ****                     break;
+ 176:console.c     **** 				case 'c':
+ 177:console.c     **** 					//Int to char
+ 178:console.c     **** 					format_flag = va_arg(ap,int);
+ 179:console.c     **** 					console_write_char (format_flag++);
+ 180:console.c     **** 					break;
+ 181:console.c     **** 				case 'i':
+ 182:console.c     **** 				case 'd':
+ 183:console.c     **** 					itoa(va_arg(ap,int), str_buffer,10);
+ 184:console.c     **** 					goto ConversionLoop;
+ 185:console.c     **** 				case 'u':
+ 186:console.c     **** 					utoa(va_arg(ap,unsigned int), str_buffer,10);
+ 187:console.c     **** 					goto ConversionLoop;
+ 188:console.c     **** 				case 'x':
+ 189:console.c     **** 					itoa(va_arg(ap,int), str_buffer,16);
+ 190:console.c     **** 					//****************************
+ 191:console.c     **** 					ConversionLoop:
+ 192:console.c     **** 					//****************************
+ 193:console.c     **** 					len = strlen (str_buffer);
+ 360               	.LM30:
+ 361 0034 6E01      		movw r12,r28
+ 362 0036 0894      		sec
+ 363 0038 C11C      		adc r12,__zero_reg__
+ 364 003a D11C      		adc r13,__zero_reg__
+ 365               	.L29:
+ 158:console.c     **** 		by = *Buffer++;
+ 367               	.LM31:
+ 368 003c F801      		movw r30,r16
+ 369 003e 8081      		ld r24,Z
+ 159:console.c     **** 		if(by==0) break; // end of format string
+ 371               	.LM32:
+ 372 0040 8823      		tst r24
+ 373 0042 01F4      		brne .+2
+ 374 0044 00C0      		rjmp .L13
+ 158:console.c     **** 		by = *Buffer++;
+ 376               	.LM33:
+ 377 0046 0F5F      		subi r16,lo8(-(1))
+ 378 0048 1F4F      		sbci r17,hi8(-(1))
+ 161:console.c     **** 		if (by == '%') {
+ 380               	.LM34:
+ 381 004a 8532      		cpi r24,lo8(37)
+ 382 004c 01F0      		breq .+2
+ 383 004e 00C0      		rjmp .L17
+ 384 0050 00C0      		rjmp .L31
+ 385               	.L19:
+ 166:console.c     **** 				move = by - '0' + move * 10;
+ 387               	.LM35:
+ 388 0052 BB0C      		lsl r11
+ 389 0054 8B2D      		mov r24,r11
+ 390 0056 880F      		lsl r24
+ 391 0058 880F      		lsl r24
+ 392 005a 8B0D      		add r24,r11
+ 393 005c 70ED      		ldi r23,lo8(-48)
+ 394 005e B72E      		mov r11,r23
+ 395 0060 B40E      		add r11,r20
+ 396 0062 B80E      		add r11,r24
+ 397               	.L31:
+ 168:console.c     ****  				by = *Buffer++;
+ 399               	.LM36:
+ 400 0064 F801      		movw r30,r16
+ 401 0066 4191      		ld r20,Z+
+ 402 0068 8F01      		movw r16,r30
+ 165:console.c     **** 			while (isdigit(by)) {				// potential overflow of move
+ 404               	.LM37:
+ 405 006a 842F      		mov r24,r20
+ 406 006c 90E0      		ldi r25,lo8(0)
+ 407 006e C097      		sbiw r24,48
+ 408 0070 8A30      		cpi r24,10
+ 409 0072 9105      		cpc r25,__zero_reg__
+ 410 0074 00F0      		brlo .L19
+ 171:console.c     **** 			switch (by) {
+ 412               	.LM38:
+ 413 0076 4936      		cpi r20,lo8(105)
+ 414 0078 01F0      		breq .L21
+ 415 007a 4A36      		cpi r20,lo8(106)
+ 416 007c 00F4      		brsh .L25
+ 417 007e 4336      		cpi r20,lo8(99)
+ 418 0080 01F0      		breq .L20
+ 419 0082 4436      		cpi r20,lo8(100)
+ 420 0084 01F4      		brne .L29
+ 421 0086 00C0      		rjmp .L21
+ 422               	.L25:
+ 423 0088 4537      		cpi r20,lo8(117)
+ 424 008a 01F0      		breq .L23
+ 425 008c 4837      		cpi r20,lo8(120)
+ 426 008e 01F0      		breq .L24
+ 427 0090 4337      		cpi r20,lo8(115)
+ 428 0092 01F4      		brne .L29
+ 173:console.c     ****                     ptr = va_arg(ap,char *);
+ 430               	.LM39:
+ 431 0094 62E0      		ldi r22,lo8(2)
+ 432 0096 E62E      		mov r14,r22
+ 433 0098 F12C      		mov r15,__zero_reg__
+ 434 009a E20E      		add r14,r18
+ 435 009c F31E      		adc r15,r19
+ 174:console.c     ****                     console_write_str(ptr);
+ 437               	.LM40:
+ 438 009e F901      		movw r30,r18
+ 439 00a0 8081      		ld r24,Z
+ 440 00a2 9181      		ldd r25,Z+1
+ 441 00a4 0E94 0000 		call console_write_str
+ 442 00a8 00C0      		rjmp .L30
+ 443               	.L20:
+ 178:console.c     **** 					format_flag = va_arg(ap,int);
+ 445               	.LM41:
+ 446 00aa 52E0      		ldi r21,lo8(2)
+ 447 00ac E52E      		mov r14,r21
+ 448 00ae F12C      		mov r15,__zero_reg__
+ 449 00b0 E20E      		add r14,r18
+ 450 00b2 F31E      		adc r15,r19
+ 179:console.c     **** 					console_write_char (format_flag++);
+ 452               	.LM42:
+ 453 00b4 F901      		movw r30,r18
+ 454 00b6 8081      		ld r24,Z
+ 455 00b8 0E94 0000 		call console_write_char
+ 456               	.L30:
+ 178:console.c     **** 					format_flag = va_arg(ap,int);
+ 458               	.LM43:
+ 459 00bc 9701      		movw r18,r14
+ 180:console.c     **** 					break;
+ 461               	.LM44:
+ 462 00be 00C0      		rjmp .L29
+ 463               	.L21:
+ 183:console.c     **** 					itoa(va_arg(ap,int), str_buffer,10);
+ 465               	.LM45:
+ 466 00c0 42E0      		ldi r20,lo8(2)
+ 467 00c2 E42E      		mov r14,r20
+ 468 00c4 F12C      		mov r15,__zero_reg__
+ 469 00c6 E20E      		add r14,r18
+ 470 00c8 F31E      		adc r15,r19
+ 471 00ca F901      		movw r30,r18
+ 472 00cc 8081      		ld r24,Z
+ 473 00ce 9181      		ldd r25,Z+1
+ 474 00d0 B601      		movw r22,r12
+ 475 00d2 4AE0      		ldi r20,lo8(10)
+ 476 00d4 50E0      		ldi r21,hi8(10)
+ 477 00d6 00C0      		rjmp .L32
+ 478               	.L23:
+ 186:console.c     **** 					utoa(va_arg(ap,unsigned int), str_buffer,10);
+ 480               	.LM46:
+ 481 00d8 92E0      		ldi r25,lo8(2)
+ 482 00da E92E      		mov r14,r25
+ 483 00dc F12C      		mov r15,__zero_reg__
+ 484 00de E20E      		add r14,r18
+ 485 00e0 F31E      		adc r15,r19
+ 486 00e2 F901      		movw r30,r18
+ 487 00e4 8081      		ld r24,Z
+ 488 00e6 9181      		ldd r25,Z+1
+ 489 00e8 B601      		movw r22,r12
+ 490 00ea 4AE0      		ldi r20,lo8(10)
+ 491 00ec 50E0      		ldi r21,hi8(10)
+ 492 00ee 0E94 0000 		call utoa
+ 187:console.c     **** 					goto ConversionLoop;
+ 494               	.LM47:
+ 495 00f2 00C0      		rjmp .L26
+ 496               	.L24:
+ 189:console.c     **** 					itoa(va_arg(ap,int), str_buffer,16);
+ 498               	.LM48:
+ 499 00f4 82E0      		ldi r24,lo8(2)
+ 500 00f6 E82E      		mov r14,r24
+ 501 00f8 F12C      		mov r15,__zero_reg__
+ 502 00fa E20E      		add r14,r18
+ 503 00fc F31E      		adc r15,r19
+ 504 00fe F901      		movw r30,r18
+ 505 0100 8081      		ld r24,Z
+ 506 0102 9181      		ldd r25,Z+1
+ 507 0104 B601      		movw r22,r12
+ 508 0106 40E1      		ldi r20,lo8(16)
+ 509 0108 50E0      		ldi r21,hi8(16)
+ 510               	.L32:
+ 511 010a 0E94 0000 		call itoa
+ 512               	.L26:
+ 514               	.LM49:
+ 515 010e F601      		movw r30,r12
+ 516 0110 0190      		ld __tmp_reg__,Z+
+ 517 0112 0020      		tst __tmp_reg__
+ 518 0114 01F4      		brne .-6
+ 519 0116 3197      		sbiw r30,1
+ 520 0118 AE2E      		mov r10,r30
+ 521 011a AC18      		sub r10,r12
+ 194:console.c     **** 					b = '0';
+ 195:console.c     **** 					while ( len < move ) {
+ 523               	.LM50:
+ 524 011c 00C0      		rjmp .L27
+ 525               	.L28:
+ 196:console.c     **** 					  console_write_char (b);
+ 527               	.LM51:
+ 528 011e 80E3      		ldi r24,lo8(48)
+ 529 0120 0E94 0000 		call console_write_char
+ 197:console.c     **** 					  len++;
+ 531               	.LM52:
+ 532 0124 A394      		inc r10
+ 533               	.L27:
+ 195:console.c     **** 					while ( len < move ) {
+ 535               	.LM53:
+ 536 0126 AB14      		cp r10,r11
+ 537 0128 00F0      		brlo .L28
+ 198:console.c     **** 					}
+ 199:console.c     **** 					console_write_str (str_buffer);
+ 539               	.LM54:
+ 540 012a C601      		movw r24,r12
+ 541 012c 0E94 0000 		call console_write_str
+ 200:console.c     **** 					move = 0;
+ 201:console.c     **** 					break;
+ 543               	.LM55:
+ 544 0130 9701      		movw r18,r14
+ 200:console.c     **** 					move = 0;
+ 546               	.LM56:
+ 547 0132 BB24      		clr r11
+ 549               	.LM57:
+ 550 0134 00C0      		rjmp .L29
+ 551               	.L17:
+ 202:console.c     **** 				} // switch
+ 203:console.c     **** 		} else
+ 204:console.c     **** 			console_write_char ( by );
+ 553               	.LM58:
+ 554 0136 2D8B      		std Y+21,r18
+ 555 0138 3E8B      		std Y+22,r19
+ 556 013a 0E94 0000 		call console_write_char
+ 557 013e 2D89      		ldd r18,Y+21
+ 558 0140 3E89      		ldd r19,Y+22
+ 559 0142 00C0      		rjmp .L29
+ 560               	.L13:
+ 561               	/* epilogue start */
+ 205:console.c     **** 	} // for
+ 206:console.c     **** 	va_end(ap);
+ 207:console.c     **** }
+ 563               	.LM59:
+ 564 0144 6696      		adiw r28,22
+ 565 0146 0FB6      		in __tmp_reg__,__SREG__
+ 566 0148 F894      		cli
+ 567 014a DEBF      		out __SP_H__,r29
+ 568 014c 0FBE      		out __SREG__,__tmp_reg__
+ 569 014e CDBF      		out __SP_L__,r28
+ 570 0150 CF91      		pop r28
+ 571 0152 DF91      		pop r29
+ 572 0154 1F91      		pop r17
+ 573 0156 0F91      		pop r16
+ 574 0158 FF90      		pop r15
+ 575 015a EF90      		pop r14
+ 576 015c DF90      		pop r13
+ 577 015e CF90      		pop r12
+ 578 0160 BF90      		pop r11
+ 579 0162 AF90      		pop r10
+ 580 0164 0895      		ret
+ 587               	.Lscope5:
+ 589               		.stabd	78,0,0
+ 590               	.global	console_tx_counter
+ 591               	.global	console_tx_counter
+ 592               		.section .bss
+ 595               	console_tx_counter:
+ 596 0000 0000      		.skip 2,0
+ 597               	.global	console_isinit
+ 598               	.global	console_isinit
+ 601               	console_isinit:
+ 602 0002 00        		.skip 1,0
+ 603               		.comm console_mode,2,1
+ 604               		.comm cm,2,1
+ 605               		.comm myip,4,1
+ 606               		.comm IP_id_counter,2,1
+ 607               		.comm eth_buffer,1201,1
+ 608               		.comm eth_len,2,1
+ 609               		.comm arp_entry,50,1
+ 610               		.comm console_tx_buffer,61,1
+ 621               		.text
+ 623               	.Letext0:
+ 624               	.global __do_clear_bss
+DEFINED SYMBOLS
+                            *ABS*:00000000 console.c
+     /tmp/cc4qCws2.s:2      *ABS*:0000003f __SREG__
+     /tmp/cc4qCws2.s:3      *ABS*:0000003e __SP_H__
+     /tmp/cc4qCws2.s:4      *ABS*:0000003d __SP_L__
+     /tmp/cc4qCws2.s:5      *ABS*:00000034 __CCP__
+     /tmp/cc4qCws2.s:6      *ABS*:00000000 __tmp_reg__
+     /tmp/cc4qCws2.s:7      *ABS*:00000001 __zero_reg__
+     /tmp/cc4qCws2.s:114    .text.console_init:00000000 console_init
+     /tmp/cc4qCws2.s:595    .bss:00000000 console_tx_counter
+     /tmp/cc4qCws2.s:601    .bss:00000002 console_isinit
+     /tmp/cc4qCws2.s:146    .text.console_flush:00000000 console_flush
+                            *COM*:0000003d console_tx_buffer
+                            *COM*:00000002 console_mode
+     /tmp/cc4qCws2.s:193    .text.console_write_char:00000000 console_write_char
+     /tmp/cc4qCws2.s:267    .text.console_write_str:00000000 console_write_str
+     /tmp/cc4qCws2.s:322    .text.console_write_P:00000000 console_write_P
+                            *COM*:00000002 cm
+                            *COM*:00000004 myip
+                            *COM*:00000002 IP_id_counter
+                            *COM*:000004b1 eth_buffer
+                            *COM*:00000002 eth_len
+                            *COM*:00000032 arp_entry
+
+UNDEFINED SYMBOLS
+usart_init
+syslog_send
+usart_write_char
+utoa
+itoa
+__do_clear_bss

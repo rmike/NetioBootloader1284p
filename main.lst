@@ -1,0 +1,220 @@
+   1               		.file	"main.c"
+   2               	__SREG__ = 0x3f
+   3               	__SP_H__ = 0x3e
+   4               	__SP_L__ = 0x3d
+   5               	__CCP__ = 0x34
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+  10               		.text
+  11               	.Ltext0:
+ 116               		.section	.init1,"ax",@progbits
+ 118               	.global	wdt_init
+ 120               	wdt_init:
+ 121               		.stabd	46,0,0
+   1:main.c        **** /*----------------------------------------------------------------------------
+   2:main.c        ****  Copyright:      Jens Mundhenke
+   3:main.c        ****  Author:         Jens Mundhenke
+   4:main.c        ****  Remarks:		 Based on a webserver of Ulrich Radig
+   5:main.c        ****  known Problems:
+   6:main.c        ****  Version:        18.01.2009
+   7:main.c        ****  Description:    Bootloader main
+   8:main.c        **** 
+   9:main.c        ****  Dieses Programm ist freie Software. Sie können es unter den Bedingungen der
+  10:main.c        ****  GNU General Public License, wie von der Free Software Foundation veröffentlicht,
+  11:main.c        ****  weitergeben und/oder modifizieren, entweder gemäß Version 2 der Lizenz oder
+  12:main.c        ****  (nach Ihrer Option) jeder späteren Version.
+  13:main.c        **** 
+  14:main.c        ****  Die Veröffentlichung dieses Programms erfolgt in der Hoffnung,
+  15:main.c        ****  daß es Ihnen von Nutzen sein wird, aber OHNE IRGENDEINE GARANTIE,
+  16:main.c        ****  sogar ohne die implizite Garantie der MARKTREIFE oder der VERWENDBARKEIT
+  17:main.c        ****  FÜR EINEN BESTIMMTEN ZWECK. Details finden Sie in der GNU General Public License.
+  18:main.c        **** 
+  19:main.c        ****  Sie sollten eine Kopie der GNU General Public License zusammen mit diesem
+  20:main.c        ****  Programm erhalten haben.
+  21:main.c        ****  Falls nicht, schreiben Sie an die Free Software Foundation,
+  22:main.c        ****  Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
+  23:main.c        **** ----------------------------------------------------------------------------*/
+  24:main.c        **** 
+  25:main.c        **** 
+  26:main.c        **** #include <avr/io.h>
+  27:main.c        **** #include <math.h>
+  28:main.c        **** #include "config.h"
+  29:main.c        **** #include "para.h"
+  30:main.c        **** #if USE_CONSOLE
+  31:main.c        **** 	#include "console.h"
+  32:main.c        **** #endif
+  33:main.c        **** #include "syslog.h"
+  34:main.c        **** #include "networkcard/enc28j60.h"
+  35:main.c        **** #include "networkcard/rtl8019.h"
+  36:main.c        **** #include "stack.h"
+  37:main.c        **** #include "timer.h"
+  38:main.c        **** #include "bootloader/tftp.h"
+  39:main.c        **** #include "bootloader/ihex.h"
+  40:main.c        **** 
+  41:main.c        **** //----------------------------------------------------------------------------
+  42:main.c        **** // wdt_init - Watchdog Init used to disable the CPU watchdog
+  43:main.c        **** //         placed in Startcode, no call needed
+  44:main.c        **** #include <avr/wdt.h>
+  45:main.c        **** 
+  46:main.c        **** void wdt_init(void) __attribute__((naked)) __attribute__((section(".init1")));
+  47:main.c        **** 
+  48:main.c        **** void wdt_init(void)
+  49:main.c        **** {
+ 123               	.LM0:
+ 124               	.LFBB1:
+ 125               	/* prologue: naked */
+ 126               	/* frame size = 0 */
+ 127               	/* stack size = 0 */
+ 128               	.L__stack_usage = 0
+  50:main.c        ****     MCUSR = 0;
+ 130               	.LM1:
+ 131 0000 14BE      		out 84-32,__zero_reg__
+  51:main.c        ****     wdt_disable();
+ 133               	.LM2:
+ 134 0002 88E1      		ldi r24,lo8(24)
+ 135               	/* #APP */
+ 136               	 ;  51 "main.c" 1
+ 137 0004 0FB6      		in __tmp_reg__, __SREG__
+ 138 0006 F894      		cli
+ 139 0008 8093 6000 		sts 96, r24
+ 140 000c 1092 6000 		sts 96, __zero_reg__
+ 141 0010 0FBE      		out __SREG__,__tmp_reg__
+ 142               		
+ 143               	 ;  0 "" 2
+ 144               	/* epilogue start */
+  52:main.c        **** 
+  53:main.c        ****     return;
+  54:main.c        **** }
+ 146               	.LM3:
+ 147               	/* #NOAPP */
+ 149               	.Lscope1:
+ 151               		.stabd	78,0,0
+ 152               		.data
+ 153               	.LC0:
+ 154 0000 0A0D 426F 		.string	"\n\rBoot\n\r"
+ 154      6F74 0A0D 
+ 154      00
+ 155               		.section	.text.main,"ax",@progbits
+ 157               	.global	main
+ 159               	main:
+ 160               		.stabd	46,0,0
+  55:main.c        **** 
+  56:main.c        **** 
+  57:main.c        **** //----------------------------------------------------------------------------
+  58:main.c        **** //Hier startet das Hauptprogramm
+  59:main.c        **** int main(void)
+  60:main.c        **** {
+ 162               	.LM4:
+ 163               	.LFBB2:
+ 164               	/* prologue: function */
+ 165               	/* frame size = 0 */
+ 166               	/* stack size = 0 */
+ 167               	.L__stack_usage = 0
+  61:main.c        **** 	ihex_intvector(IHEX_INTVECTOR_BOOT);
+ 169               	.LM5:
+ 170 0000 81E0      		ldi r24,lo8(1)
+ 171 0002 0E94 0000 		call ihex_intvector
+  62:main.c        **** 
+  63:main.c        **** 	//Applikationen starten
+  64:main.c        **** 	stack_init();
+ 173               	.LM6:
+ 174 0006 0E94 0000 		call stack_init
+  65:main.c        **** 	tftp_init();
+ 176               	.LM7:
+ 177 000a 0E94 0000 		call tftp_init
+  66:main.c        **** 
+  67:main.c        **** 	//Globale Interrupts einschalten
+  68:main.c        **** 	sei();
+ 179               	.LM8:
+ 180               	/* #APP */
+ 181               	 ;  68 "main.c" 1
+ 182 000e 7894      		sei
+ 183               	 ;  0 "" 2
+  69:main.c        **** 
+  70:main.c        **** #if USE_CONSOLE
+  71:main.c        **** //	console_mode = (char)para_getip(TFTP_MSG_EEPROM_STORE, TFTP_MSGMSK);
+  72:main.c        **** 
+  73:main.c        **** #if USE_SYSLOG
+  74:main.c        **** 	console_mode = CONSOLE_SYSLOG;
+  75:main.c        **** #endif
+  76:main.c        **** 
+  77:main.c        **** #if USE_USART
+  78:main.c        **** 	console_mode |= CONSOLE_USART;
+ 185               	.LM9:
+ 186               	/* #NOAPP */
+ 187 0010 83E0      		ldi r24,lo8(3)
+ 188 0012 90E0      		ldi r25,hi8(3)
+ 189 0014 9093 0000 		sts console_mode+1,r25
+ 190 0018 8093 0000 		sts console_mode,r24
+  79:main.c        **** #endif
+  80:main.c        **** 
+  81:main.c        **** 	console_init();
+ 192               	.LM10:
+ 193 001c 0E94 0000 		call console_init
+  82:main.c        **** 	console_write("\n\rBoot\n\r");
+ 195               	.LM11:
+ 196 0020 00D0      		rcall .
+ 197 0022 80E0      		ldi r24,lo8(.LC0)
+ 198 0024 90E0      		ldi r25,hi8(.LC0)
+ 199 0026 EDB7      		in r30,__SP_L__
+ 200 0028 FEB7      		in r31,__SP_H__
+ 201 002a 9283      		std Z+2,r25
+ 202 002c 8183      		std Z+1,r24
+ 203 002e 0E94 0000 		call console_write_P
+  83:main.c        **** #endif
+  84:main.c        **** 
+  85:main.c        **** 	tftp_request();				// send tftp request for bootfile
+ 205               	.LM12:
+ 206 0032 0F90      		pop __tmp_reg__
+ 207 0034 0F90      		pop __tmp_reg__
+ 208 0036 0E94 0000 		call tftp_request
+ 209               	.L3:
+  86:main.c        **** 
+  87:main.c        ****     while(1)
+  88:main.c        **** 	{
+  89:main.c        **** 	    eth_get_data();			// handle timer and incoming packets
+ 211               	.LM13:
+ 212 003a 0E94 0000 		call eth_get_data
+  90:main.c        **** 	    tftp_watchdogcheck();	// check for timeout in tftp communication
+ 214               	.LM14:
+ 215 003e 0E94 0000 		call tftp_watchdogcheck
+ 216 0042 00C0      		rjmp .L3
+ 218               	.Lscope2:
+ 220               		.stabd	78,0,0
+ 221               		.comm myip,4,1
+ 222               		.comm IP_id_counter,2,1
+ 223               		.comm eth_buffer,1201,1
+ 224               		.comm eth_len,2,1
+ 225               		.comm arp_entry,50,1
+ 231               		.text
+ 233               	.Letext0:
+ 234               	.global __do_copy_data
+ 235               	.global __do_clear_bss
+DEFINED SYMBOLS
+                            *ABS*:00000000 main.c
+     /tmp/cccALDiW.s:2      *ABS*:0000003f __SREG__
+     /tmp/cccALDiW.s:3      *ABS*:0000003e __SP_H__
+     /tmp/cccALDiW.s:4      *ABS*:0000003d __SP_L__
+     /tmp/cccALDiW.s:5      *ABS*:00000034 __CCP__
+     /tmp/cccALDiW.s:6      *ABS*:00000000 __tmp_reg__
+     /tmp/cccALDiW.s:7      *ABS*:00000001 __zero_reg__
+     /tmp/cccALDiW.s:120    .init1:00000000 wdt_init
+     /tmp/cccALDiW.s:159    .text.main:00000000 main
+                            *COM*:00000004 myip
+                            *COM*:00000002 IP_id_counter
+                            *COM*:000004b1 eth_buffer
+                            *COM*:00000002 eth_len
+                            *COM*:00000032 arp_entry
+
+UNDEFINED SYMBOLS
+ihex_intvector
+stack_init
+tftp_init
+console_mode
+console_init
+console_write_P
+tftp_request
+eth_get_data
+tftp_watchdogcheck
+__do_copy_data
+__do_clear_bss

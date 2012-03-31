@@ -1,0 +1,1069 @@
+   1               		.file	"tftp.c"
+   2               	__SREG__ = 0x3f
+   3               	__SP_H__ = 0x3e
+   4               	__SP_L__ = 0x3d
+   5               	__CCP__ = 0x34
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+  10               		.text
+  11               	.Ltext0:
+ 120               		.section	.text.tftp_init,"ax",@progbits
+ 122               	.global	tftp_init
+ 124               	tftp_init:
+ 125               		.stabd	46,0,0
+   1:bootloader/tftp.c **** /*----------------------------------------------------------------------------
+   2:bootloader/tftp.c ****  Copyright:      Jens Mundhenke
+   3:bootloader/tftp.c ****  Author:         Jens Mundhenke
+   4:bootloader/tftp.c ****  Remarks:		 Used in an simplified IP-stack of Ulrich Radig
+   5:bootloader/tftp.c ****  known Problems: activating to much debug will lead to timing and memory problems
+   6:bootloader/tftp.c ****  Version:        18.01.2009
+   7:bootloader/tftp.c ****  Description:    TFTP-Client for Bootloader use
+   8:bootloader/tftp.c **** 
+   9:bootloader/tftp.c ****  The module is a simple TFTP-client. TFTP server IP and filename are stored in EEPROM
+  10:bootloader/tftp.c ****  tftp_request starts a download, the answers are handled by tftp_get. It is expected
+  11:bootloader/tftp.c ****  that this function is called by ipstack if a UDP packet arrives.
+  12:bootloader/tftp.c **** 
+  13:bootloader/tftp.c ****  The data received is sent byte by byte to an intel hex interpreter and flasher.
+  14:bootloader/tftp.c **** 
+  15:bootloader/tftp.c ****  This is not an universal TFTP-client, the simple structure is designed to work in a
+  16:bootloader/tftp.c ****  bootloader. It only supports download.
+  17:bootloader/tftp.c **** 
+  18:bootloader/tftp.c ****  Dieses Programm ist freie Software. Sie können es unter den Bedingungen der
+  19:bootloader/tftp.c ****  GNU General Public License, wie von der Free Software Foundation veröffentlicht,
+  20:bootloader/tftp.c ****  weitergeben und/oder modifizieren, entweder gemäß Version 2 der Lizenz oder
+  21:bootloader/tftp.c ****  (nach Ihrer Option) jeder späteren Version.
+  22:bootloader/tftp.c **** 
+  23:bootloader/tftp.c ****  Die Veröffentlichung dieses Programms erfolgt in der Hoffnung,
+  24:bootloader/tftp.c ****  daß es Ihnen von Nutzen sein wird, aber OHNE IRGENDEINE GARANTIE,
+  25:bootloader/tftp.c ****  sogar ohne die implizite Garantie der MARKTREIFE oder der VERWENDBARKEIT
+  26:bootloader/tftp.c ****  FÜR EINEN BESTIMMTEN ZWECK. Details finden Sie in der GNU General Public License.
+  27:bootloader/tftp.c **** 
+  28:bootloader/tftp.c ****  Sie sollten eine Kopie der GNU General Public License zusammen mit diesem
+  29:bootloader/tftp.c ****  Programm erhalten haben.
+  30:bootloader/tftp.c ****  Falls nicht, schreiben Sie an die Free Software Foundation,
+  31:bootloader/tftp.c ****  Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
+  32:bootloader/tftp.c **** ----------------------------------------------------------------------------*/
+  33:bootloader/tftp.c **** 
+  34:bootloader/tftp.c **** #include <string.h>
+  35:bootloader/tftp.c **** #include <stdlib.h>
+  36:bootloader/tftp.c **** #include <stdint.h>
+  37:bootloader/tftp.c **** #include <avr/io.h>
+  38:bootloader/tftp.c **** #include <avr/eeprom.h>
+  39:bootloader/tftp.c **** 
+  40:bootloader/tftp.c **** #include "config.h"
+  41:bootloader/tftp.c **** #include "para.h"
+  42:bootloader/tftp.c **** #include "stack.h"
+  43:bootloader/tftp.c **** #include "console.h"
+  44:bootloader/tftp.c **** #include "bootloader/tftp.h"
+  45:bootloader/tftp.c **** #include "bootloader/ihex.h"
+  46:bootloader/tftp.c **** 
+  47:bootloader/tftp.c **** //----------------------------------------------------------------------------
+  48:bootloader/tftp.c **** // structure of a TFTP packet, see RFC1350
+  49:bootloader/tftp.c **** typedef struct TFTP_header_st {
+  50:bootloader/tftp.c **** 	uint16_t	type;			// constants in tftp.h
+  51:bootloader/tftp.c **** 	union {
+  52:bootloader/tftp.c **** 		char raw[0];			// raw data for the request
+  53:bootloader/tftp.c **** 		struct {				// data with block number
+  54:bootloader/tftp.c **** 			uint16_t block;
+  55:bootloader/tftp.c **** 			char data[0];
+  56:bootloader/tftp.c **** 		} data;
+  57:bootloader/tftp.c **** 		struct {				// ack, only a block number
+  58:bootloader/tftp.c **** 			uint16_t block;
+  59:bootloader/tftp.c **** 		} ack;
+  60:bootloader/tftp.c **** 		struct {				// error message with err code
+  61:bootloader/tftp.c **** 			uint16_t code;
+  62:bootloader/tftp.c **** 			char msg[1];
+  63:bootloader/tftp.c **** 		} error;
+  64:bootloader/tftp.c **** 	} u;
+  65:bootloader/tftp.c **** } TFTP_header_t;
+  66:bootloader/tftp.c **** 
+  67:bootloader/tftp.c **** 
+  68:bootloader/tftp.c **** unsigned char tftp_server_ip[4];// IP address of the server, set by default in config.h
+  69:bootloader/tftp.c **** 								// or from EEPROM
+  70:bootloader/tftp.c **** 
+  71:bootloader/tftp.c **** 
+  72:bootloader/tftp.c **** uint16_t tftp_block = TFTP_OFF;		// number of TFTP-block number that is expected
+  73:bootloader/tftp.c **** 
+  74:bootloader/tftp.c **** volatile int tftp_watchdog=TFTP_WATCHDOG_OFF;	// count down watchdog for timeout after sending a pa
+  75:bootloader/tftp.c **** 
+  76:bootloader/tftp.c **** 
+  77:bootloader/tftp.c **** //----------------------------------------------------------------------------
+  78:bootloader/tftp.c **** //Outputs - only available if USE_USART is set
+  79:bootloader/tftp.c **** #if USE_CONSOLE
+  80:bootloader/tftp.c **** //#define TFTP_DEBUG usart_write
+  81:bootloader/tftp.c **** //#define TFTP_DEBUG console_write
+  82:bootloader/tftp.c **** #define TFTP_DEBUG(...)
+  83:bootloader/tftp.c **** #define TFTP_ERROR console_write
+  84:bootloader/tftp.c **** #define TFTP_MSG   console_write
+  85:bootloader/tftp.c **** #else
+  86:bootloader/tftp.c **** #define TFTP_DEBUG(...)
+  87:bootloader/tftp.c **** #define TFTP_ERROR(...)
+  88:bootloader/tftp.c **** #define TFTP_MSG(...)
+  89:bootloader/tftp.c **** #endif
+  90:bootloader/tftp.c **** 
+  91:bootloader/tftp.c **** //----------------------------------------------------------------------------
+  92:bootloader/tftp.c **** //Initialisierung des TFTP Ports (für den Datenempfang)
+  93:bootloader/tftp.c **** void tftp_init (void)
+  94:bootloader/tftp.c **** {
+ 127               	.LM0:
+ 128               	.LFBB1:
+ 129               	/* prologue: function */
+ 130               	/* frame size = 0 */
+ 131               	/* stack size = 0 */
+ 132               	.L__stack_usage = 0
+  95:bootloader/tftp.c **** 	ihex_init();			// initialize the interpreter and flasher
+ 134               	.LM1:
+ 135 0000 0E94 0000 		call ihex_init
+  96:bootloader/tftp.c **** 	tftp_watchdog = TFTP_WATCHDOG_OFF;	// reset timer for answer
+ 137               	.LM2:
+ 138 0004 80E3      		ldi r24,lo8(30000)
+ 139 0006 95E7      		ldi r25,hi8(30000)
+ 140 0008 9093 0000 		sts tftp_watchdog+1,r25
+ 141 000c 8093 0000 		sts tftp_watchdog,r24
+  97:bootloader/tftp.c **** 
+  98:bootloader/tftp.c **** 	tftp_block = TFTP_OFF;	// init the number of the last TFTP block received
+ 143               	.LM3:
+ 144 0010 1092 0000 		sts tftp_block+1,__zero_reg__
+ 145 0014 1092 0000 		sts tftp_block,__zero_reg__
+ 146               	/* epilogue start */
+  99:bootloader/tftp.c **** 	return;
+ 100:bootloader/tftp.c **** }
+ 148               	.LM4:
+ 149 0018 0895      		ret
+ 151               	.Lscope1:
+ 153               		.stabd	78,0,0
+ 154               		.data
+ 155               	.LC0:
+ 156 0000 5376 7220 		.string	"Svr %3i.%3i.%3i.%3i\r\n"
+ 156      2533 692E 
+ 156      2533 692E 
+ 156      2533 692E 
+ 156      2533 690D 
+ 157               	.LC1:
+ 158 0016 5376 723F 		.string	"Svr?\r\n"
+ 158      0D0A 00
+ 159               	.LC2:
+ 160 001d 6F63 7465 		.string	"octet"
+ 160      7400 
+ 161               	.LC3:
+ 162 0023 6176 722E 		.string	"avr.hex"
+ 162      6865 7800 
+ 163               	.LC4:
+ 164 002b 4669 6C65 		.string	"File %s\r\n"
+ 164      2025 730D 
+ 164      0A00 
+ 165               		.section	.text.tftp_request,"ax",@progbits
+ 167               	.global	tftp_request
+ 169               	tftp_request:
+ 170               		.stabd	46,0,0
+ 101:bootloader/tftp.c **** 
+ 102:bootloader/tftp.c **** 
+ 103:bootloader/tftp.c **** //----------------------------------------------------------------------------
+ 104:bootloader/tftp.c **** //Anforderung einer Datei vom TFTP-Server
+ 105:bootloader/tftp.c **** void tftp_request (void)
+ 106:bootloader/tftp.c **** {
+ 172               	.LM5:
+ 173               	.LFBB2:
+ 174 0000 AF92      		push r10
+ 175 0002 BF92      		push r11
+ 176 0004 CF92      		push r12
+ 177 0006 DF92      		push r13
+ 178 0008 EF92      		push r14
+ 179 000a FF92      		push r15
+ 180 000c 0F93      		push r16
+ 181 000e 1F93      		push r17
+ 182 0010 DF93      		push r29
+ 183 0012 CF93      		push r28
+ 184 0014 CDB7      		in r28,__SP_L__
+ 185 0016 DEB7      		in r29,__SP_H__
+ 186 0018 6A97      		sbiw r28,26
+ 187 001a 0FB6      		in __tmp_reg__,__SREG__
+ 188 001c F894      		cli
+ 189 001e DEBF      		out __SP_H__,r29
+ 190 0020 0FBE      		out __SREG__,__tmp_reg__
+ 191 0022 CDBF      		out __SP_L__,r28
+ 192               	/* prologue: function */
+ 193               	/* frame size = 26 */
+ 194               	/* stack size = 36 */
+ 195               	.L__stack_usage = 36
+ 107:bootloader/tftp.c **** 	char name[TFTP_FILENAME_MAX+1];
+ 108:bootloader/tftp.c **** 	char mode[9];
+ 109:bootloader/tftp.c **** 	int i;
+ 110:bootloader/tftp.c **** 
+ 111:bootloader/tftp.c **** 	TFTP_header_t *tftp_header_p = (TFTP_header_t *)(eth_buffer+UDP_DATA_START);
+ 112:bootloader/tftp.c **** 
+ 113:bootloader/tftp.c **** 	TFTP_DEBUG("TFTP Req\r\n");
+ 114:bootloader/tftp.c **** 	if ( tftp_block != TFTP_OFF ) {
+ 197               	.LM6:
+ 198 0024 8091 0000 		lds r24,tftp_block
+ 199 0028 9091 0000 		lds r25,tftp_block+1
+ 200 002c 0097      		sbiw r24,0
+ 201 002e 01F0      		breq .L3
+ 115:bootloader/tftp.c **** //	  TFTP_ERROR("TFTP running!\r\n");
+ 116:bootloader/tftp.c **** 	  ihex_appstart();
+ 203               	.LM7:
+ 204 0030 0E94 0000 		call ihex_appstart
+ 205               	.L3:
+ 117:bootloader/tftp.c **** 	}
+ 118:bootloader/tftp.c **** 
+ 119:bootloader/tftp.c **** 	(*((unsigned long*)&tftp_server_ip[0])) = para_getip(TFTP_IP_EEPROM_STORE,TFTP_IP);
+ 207               	.LM8:
+ 208 0034 8CE3      		ldi r24,lo8(60)
+ 209 0036 90E0      		ldi r25,hi8(60)
+ 210 0038 40EC      		ldi r20,lo8(-2013157184)
+ 211 003a 58EA      		ldi r21,hi8(-2013157184)
+ 212 003c 61E0      		ldi r22,hlo8(-2013157184)
+ 213 003e 78E8      		ldi r23,hhi8(-2013157184)
+ 214 0040 0E94 0000 		call para_getip
+ 215 0044 6093 0000 		sts tftp_server_ip,r22
+ 216 0048 7093 0000 		sts tftp_server_ip+1,r23
+ 217 004c 8093 0000 		sts tftp_server_ip+2,r24
+ 218 0050 9093 0000 		sts tftp_server_ip+3,r25
+ 120:bootloader/tftp.c **** 	TFTP_MSG("Svr %3i.%3i.%3i.%3i\r\n",tftp_server_ip[0],tftp_server_ip[1],tftp_server_ip[2],tftp_serv
+ 220               	.LM9:
+ 221 0054 8DB7      		in r24,__SP_L__
+ 222 0056 9EB7      		in r25,__SP_H__
+ 223 0058 0A97      		sbiw r24,10
+ 224 005a 0FB6      		in __tmp_reg__,__SREG__
+ 225 005c F894      		cli
+ 226 005e 9EBF      		out __SP_H__,r25
+ 227 0060 0FBE      		out __SREG__,__tmp_reg__
+ 228 0062 8DBF      		out __SP_L__,r24
+ 229 0064 EDB7      		in r30,__SP_L__
+ 230 0066 FEB7      		in r31,__SP_H__
+ 231 0068 3196      		adiw r30,1
+ 232 006a 80E0      		ldi r24,lo8(.LC0)
+ 233 006c 90E0      		ldi r25,hi8(.LC0)
+ 234 006e ADB7      		in r26,__SP_L__
+ 235 0070 BEB7      		in r27,__SP_H__
+ 236 0072 1296      		adiw r26,1+1
+ 237 0074 9C93      		st X,r25
+ 238 0076 8E93      		st -X,r24
+ 239 0078 1197      		sbiw r26,1
+ 240 007a 8091 0000 		lds r24,tftp_server_ip
+ 241 007e 8283      		std Z+2,r24
+ 242 0080 1382      		std Z+3,__zero_reg__
+ 243 0082 8091 0000 		lds r24,tftp_server_ip+1
+ 244 0086 8483      		std Z+4,r24
+ 245 0088 1582      		std Z+5,__zero_reg__
+ 246 008a 8091 0000 		lds r24,tftp_server_ip+2
+ 247 008e 8683      		std Z+6,r24
+ 248 0090 1782      		std Z+7,__zero_reg__
+ 249 0092 8091 0000 		lds r24,tftp_server_ip+3
+ 250 0096 8087      		std Z+8,r24
+ 251 0098 1186      		std Z+9,__zero_reg__
+ 252 009a 0E94 0000 		call console_write_P
+ 121:bootloader/tftp.c **** 
+ 122:bootloader/tftp.c **** 	//Arp-Request senden
+ 123:bootloader/tftp.c **** 	unsigned long tmp_ip = (*(unsigned long*)&tftp_server_ip[0]);
+ 254               	.LM10:
+ 255 009e A090 0000 		lds r10,tftp_server_ip
+ 256 00a2 B090 0000 		lds r11,tftp_server_ip+1
+ 257 00a6 C090 0000 		lds r12,tftp_server_ip+2
+ 258 00aa D090 0000 		lds r13,tftp_server_ip+3
+ 259 00ae EDB7      		in r30,__SP_L__
+ 260 00b0 FEB7      		in r31,__SP_H__
+ 261 00b2 3A96      		adiw r30,10
+ 262 00b4 0FB6      		in __tmp_reg__,__SREG__
+ 263 00b6 F894      		cli
+ 264 00b8 FEBF      		out __SP_H__,r31
+ 265 00ba 0FBE      		out __SREG__,__tmp_reg__
+ 266 00bc EDBF      		out __SP_L__,r30
+ 267 00be 03E0      		ldi r16,lo8(3)
+ 268 00c0 10E0      		ldi r17,hi8(3)
+ 269 00c2 00C0      		rjmp .L4
+ 270               	.L6:
+ 272               	.LM11:
+ 273 00c4 0150      		subi r16,lo8(-(-1))
+ 274 00c6 1040      		sbci r17,hi8(-(-1))
+ 124:bootloader/tftp.c **** 
+ 125:bootloader/tftp.c **** 	for ( i=0; i<TFTP_ARPRETRIES && (arp_request(tmp_ip) != 1); i++ );
+ 276               	.LM12:
+ 277 00c8 01F0      		breq .L5
+ 278               	.L4:
+ 280               	.LM13:
+ 281 00ca C601      		movw r24,r12
+ 282 00cc B501      		movw r22,r10
+ 283 00ce 0E94 0000 		call arp_request
+ 284 00d2 8130      		cpi r24,lo8(1)
+ 285 00d4 01F4      		brne .L6
+ 286 00d6 00C0      		rjmp .L7
+ 287               	.L5:
+ 126:bootloader/tftp.c **** 
+ 127:bootloader/tftp.c **** 	if (i>=TFTP_ARPRETRIES) {
+ 128:bootloader/tftp.c **** 	  TFTP_ERROR("Svr?\r\n");
+ 289               	.LM14:
+ 290 00d8 00D0      		rcall .
+ 291 00da 80E0      		ldi r24,lo8(.LC1)
+ 292 00dc 90E0      		ldi r25,hi8(.LC1)
+ 293 00de ADB7      		in r26,__SP_L__
+ 294 00e0 BEB7      		in r27,__SP_H__
+ 295 00e2 1296      		adiw r26,1+1
+ 296 00e4 9C93      		st X,r25
+ 297 00e6 8E93      		st -X,r24
+ 298 00e8 1197      		sbiw r26,1
+ 299 00ea 0E94 0000 		call console_write_P
+ 129:bootloader/tftp.c **** 	  ihex_appstart();
+ 301               	.LM15:
+ 302 00ee 0F90      		pop __tmp_reg__
+ 303 00f0 0F90      		pop __tmp_reg__
+ 304 00f2 0E94 0000 		call ihex_appstart
+ 305               	.L7:
+ 130:bootloader/tftp.c **** 	}
+ 131:bootloader/tftp.c **** 
+ 132:bootloader/tftp.c **** 	// setting name and mode from constants, prepared for a more flexible solution
+ 133:bootloader/tftp.c **** 	strcpy ( mode, TFTP_MODE );
+ 307               	.LM16:
+ 308 00f6 7E01      		movw r14,r28
+ 309 00f8 0894      		sec
+ 310 00fa E11C      		adc r14,__zero_reg__
+ 311 00fc F11C      		adc r15,__zero_reg__
+ 312 00fe C701      		movw r24,r14
+ 313 0100 60E0      		ldi r22,lo8(.LC2)
+ 314 0102 70E0      		ldi r23,hi8(.LC2)
+ 315 0104 0E94 0000 		call strcpy
+ 134:bootloader/tftp.c **** 
+ 135:bootloader/tftp.c **** 	para_getstring (name, (unsigned char *)TFTP_FILE_EEPROM_STORE, TFTP_FILENAME_MAX, TFTP_NAME);
+ 317               	.LM17:
+ 318 0108 8E01      		movw r16,r28
+ 319 010a 065F      		subi r16,lo8(-(10))
+ 320 010c 1F4F      		sbci r17,hi8(-(10))
+ 321 010e C801      		movw r24,r16
+ 322 0110 60E4      		ldi r22,lo8(64)
+ 323 0112 70E0      		ldi r23,hi8(64)
+ 324 0114 40E1      		ldi r20,lo8(16)
+ 325 0116 20E0      		ldi r18,lo8(.LC3)
+ 326 0118 30E0      		ldi r19,hi8(.LC3)
+ 327 011a 0E94 0000 		call para_getstring
+ 136:bootloader/tftp.c **** 	TFTP_MSG("File %s\r\n", name);
+ 329               	.LM18:
+ 330 011e 00D0      		rcall .
+ 331 0120 00D0      		rcall .
+ 332 0122 80E0      		ldi r24,lo8(.LC4)
+ 333 0124 90E0      		ldi r25,hi8(.LC4)
+ 334 0126 EDB7      		in r30,__SP_L__
+ 335 0128 FEB7      		in r31,__SP_H__
+ 336 012a 9283      		std Z+2,r25
+ 337 012c 8183      		std Z+1,r24
+ 338 012e 1483      		std Z+4,r17
+ 339 0130 0383      		std Z+3,r16
+ 340 0132 0E94 0000 		call console_write_P
+ 137:bootloader/tftp.c **** 
+ 138:bootloader/tftp.c **** 	// building the header structure
+ 139:bootloader/tftp.c **** 	tftp_header_p->type = LBBL_ENDIAN_INT((int)TFTP_RRQ);
+ 342               	.LM19:
+ 343 0136 80E0      		ldi r24,lo8(256)
+ 344 0138 91E0      		ldi r25,hi8(256)
+ 345 013a 9093 0000 		sts eth_buffer+42+1,r25
+ 346 013e 8093 0000 		sts eth_buffer+42,r24
+ 140:bootloader/tftp.c **** 	strcpy ( tftp_header_p->u.raw, name );
+ 348               	.LM20:
+ 349 0142 0F90      		pop __tmp_reg__
+ 350 0144 0F90      		pop __tmp_reg__
+ 351 0146 0F90      		pop __tmp_reg__
+ 352 0148 0F90      		pop __tmp_reg__
+ 353 014a 80E0      		ldi r24,lo8(eth_buffer+44)
+ 354 014c 90E0      		ldi r25,hi8(eth_buffer+44)
+ 355 014e B801      		movw r22,r16
+ 356 0150 0E94 0000 		call strcpy
+ 141:bootloader/tftp.c **** 	strcpy ( &(tftp_header_p->u.raw[strlen(name)+1]), mode );
+ 358               	.LM21:
+ 359 0154 D801      		movw r26,r16
+ 360 0156 0D90      		ld __tmp_reg__,X+
+ 361 0158 0020      		tst __tmp_reg__
+ 362 015a 01F4      		brne .-6
+ 363 015c CD01      		movw r24,r26
+ 364 015e 801B      		sub r24,r16
+ 365 0160 910B      		sbc r25,r17
+ 366 0162 8050      		subi r24,lo8(-(eth_buffer+44))
+ 367 0164 9040      		sbci r25,hi8(-(eth_buffer+44))
+ 368 0166 B701      		movw r22,r14
+ 369 0168 0E94 0000 		call strcpy
+ 142:bootloader/tftp.c **** 	create_new_udp_packet(strlen(name)+strlen(mode)+4,TFTP_CLIENT_PORT,TFTP_SERVER_PORT,tmp_ip);
+ 371               	.LM22:
+ 372 016c F801      		movw r30,r16
+ 373 016e 0190      		ld __tmp_reg__,Z+
+ 374 0170 0020      		tst __tmp_reg__
+ 375 0172 01F4      		brne .-6
+ 376 0174 CF01      		movw r24,r30
+ 377 0176 0197      		sbiw r24,1
+ 378 0178 801B      		sub r24,r16
+ 379 017a 910B      		sbc r25,r17
+ 380 017c F701      		movw r30,r14
+ 381 017e 0190      		ld __tmp_reg__,Z+
+ 382 0180 0020      		tst __tmp_reg__
+ 383 0182 01F4      		brne .-6
+ 384 0184 3197      		sbiw r30,1
+ 385 0186 EE19      		sub r30,r14
+ 386 0188 FF09      		sbc r31,r15
+ 387 018a 8E0F      		add r24,r30
+ 388 018c 9F1F      		adc r25,r31
+ 389 018e 0496      		adiw r24,4
+ 390 0190 65E5      		ldi r22,lo8(-23467)
+ 391 0192 74EA      		ldi r23,hi8(-23467)
+ 392 0194 45E4      		ldi r20,lo8(69)
+ 393 0196 50E0      		ldi r21,hi8(69)
+ 394 0198 9601      		movw r18,r12
+ 395 019a 8501      		movw r16,r10
+ 396 019c 0E94 0000 		call create_new_udp_packet
+ 397               	.LBB6:
+ 398               	.LBB7:
+ 143:bootloader/tftp.c **** 	TFTP_DEBUG("TFTP Req sent\r\n");
+ 144:bootloader/tftp.c **** 
+ 145:bootloader/tftp.c **** 	tftp_watchdogrestart();		// start watchdog
+ 146:bootloader/tftp.c **** 
+ 147:bootloader/tftp.c **** 	tftp_block = TFTP_REC;
+ 148:bootloader/tftp.c **** }
+ 149:bootloader/tftp.c **** 
+ 150:bootloader/tftp.c **** //----------------------------------------------------------------------------
+ 151:bootloader/tftp.c **** // acknowledges the block number stored in tftp_block
+ 152:bootloader/tftp.c **** void tftp_ack(unsigned long src_ip, unsigned int src_port, TFTP_header_t *tftp_header_p)
+ 153:bootloader/tftp.c **** {
+ 154:bootloader/tftp.c **** 	tftp_header_p->type = LBBL_ENDIAN_INT((int)TFTP_ACK);			// set packet type to ACK
+ 155:bootloader/tftp.c **** 	tftp_header_p->u.ack.block = LBBL_ENDIAN_INT((int)tftp_block);	// ack last packet
+ 156:bootloader/tftp.c **** 	create_new_udp_packet(4,TFTP_CLIENT_PORT,src_port,src_ip);		// send ACK
+ 157:bootloader/tftp.c **** 	tftp_watchdogrestart();											// restart watchdog
+ 158:bootloader/tftp.c **** }
+ 159:bootloader/tftp.c **** 
+ 160:bootloader/tftp.c **** //----------------------------------------------------------------------------
+ 161:bootloader/tftp.c **** // called by ip stack, this function interprets the tftp-answers of the server
+ 162:bootloader/tftp.c **** void tftp_get(unsigned long src_ip, unsigned int src_port)
+ 163:bootloader/tftp.c **** {
+ 164:bootloader/tftp.c **** 	TFTP_header_t *tftp_header_p = (TFTP_header_t *)(eth_buffer+UDP_DATA_START);
+ 165:bootloader/tftp.c **** 	int data_len;		// length of TFTP-data in the packet
+ 166:bootloader/tftp.c **** 	unsigned int block;	// blocknumber in the packet
+ 167:bootloader/tftp.c **** 	int i;				// counter for the bytes in data part of TFTP-packet
+ 168:bootloader/tftp.c **** 	char rc;			// return code of the flasher function
+ 169:bootloader/tftp.c **** 
+ 170:bootloader/tftp.c **** 	TFTP_DEBUG("TFTP Receive, Type %i!!\r\n", LBBL_ENDIAN_INT(tftp_header_p->type) );
+ 171:bootloader/tftp.c **** 
+ 172:bootloader/tftp.c **** 	// we are not in the mood, due to error in former data or because no tftp-data was requested
+ 173:bootloader/tftp.c **** 	if ( tftp_block == TFTP_OFF ) {
+ 174:bootloader/tftp.c **** //		TFTP_ERROR ( "Packet w/o Req\r\n" );
+ 175:bootloader/tftp.c **** 		return;
+ 176:bootloader/tftp.c **** 	}
+ 177:bootloader/tftp.c **** 
+ 178:bootloader/tftp.c **** 	//
+ 179:bootloader/tftp.c **** 	switch ( LBBL_ENDIAN_INT(tftp_header_p->type) ) {
+ 180:bootloader/tftp.c **** 		case TFTP_ERR:
+ 181:bootloader/tftp.c **** 			TFTP_ERROR ( "Err %s\r\n", tftp_header_p->u.error.msg );
+ 182:bootloader/tftp.c **** 			tftp_block = TFTP_OFF;
+ 183:bootloader/tftp.c **** 	  		ihex_appstart();
+ 184:bootloader/tftp.c **** 			break;
+ 185:bootloader/tftp.c **** 
+ 186:bootloader/tftp.c **** 		case TFTP_DATA:
+ 187:bootloader/tftp.c **** 			data_len = UDP_DATA_END_VAR - UDP_DATA_START - 4;
+ 188:bootloader/tftp.c **** 			block = LBBL_ENDIAN_INT(tftp_header_p->u.data.block);
+ 189:bootloader/tftp.c **** 
+ 190:bootloader/tftp.c **** 			TFTP_DEBUG ( "TFTP Datablock %i, Size: %i\r\n", block, data_len );
+ 191:bootloader/tftp.c **** 
+ 192:bootloader/tftp.c **** 			// interpret the packet
+ 193:bootloader/tftp.c **** 			// warning: we are using the ethernet buffer, may this be overwritten?!? No, Int is disabled
+ 194:bootloader/tftp.c **** 			if ( block == tftp_block ) {	// the expected next packet?
+ 195:bootloader/tftp.c **** 				rc = 0;
+ 196:bootloader/tftp.c **** 				for (i=0; (i<data_len) && !rc; i++)
+ 197:bootloader/tftp.c **** 					rc = ihex_flash ( tftp_header_p->u.data.data[i] );
+ 198:bootloader/tftp.c **** 
+ 199:bootloader/tftp.c **** 				if (rc) {					// error while interpreting the intel hex contents?
+ 200:bootloader/tftp.c **** 					TFTP_ERROR ( "Err %i@%i\r\n", (int)rc, i-1 );
+ 201:bootloader/tftp.c **** 					tftp_block = TFTP_OFF;
+ 202:bootloader/tftp.c **** 					return;
+ 203:bootloader/tftp.c **** 				} else {					// everything went fine, acknowledge the block
+ 204:bootloader/tftp.c **** 					TFTP_MSG ( "." );
+ 205:bootloader/tftp.c **** 					tftp_ack(src_ip, src_port, tftp_header_p);
+ 206:bootloader/tftp.c **** 					tftp_block++;
+ 207:bootloader/tftp.c **** 				}
+ 208:bootloader/tftp.c **** 
+ 209:bootloader/tftp.c **** 			} else {						// wrong block number
+ 210:bootloader/tftp.c **** 				TFTP_ERROR ( "Block %i, %i exp.\r\n", block, tftp_block );
+ 211:bootloader/tftp.c **** 				tftp_ack(src_ip, src_port, tftp_header_p);	// ack the last block that was correct
+ 212:bootloader/tftp.c **** 			}
+ 213:bootloader/tftp.c **** 
+ 214:bootloader/tftp.c **** 			// if the packet has less the 512 bytes of data transmission is over
+ 215:bootloader/tftp.c **** 			if ( data_len != 512 ) {
+ 216:bootloader/tftp.c **** 			  TFTP_MSG ( "done\r\n" );
+ 217:bootloader/tftp.c **** 			  tftp_block = TFTP_OFF;
+ 218:bootloader/tftp.c **** 			  ihex_appstart();
+ 219:bootloader/tftp.c **** 			}
+ 220:bootloader/tftp.c **** 			break;
+ 221:bootloader/tftp.c **** 		default:
+ 222:bootloader/tftp.c **** 			TFTP_ERROR ( "Err Type %i\r\n", LBBL_ENDIAN_INT(tftp_header_p->type) );
+ 223:bootloader/tftp.c **** 			tftp_block = TFTP_OFF;
+ 224:bootloader/tftp.c **** 			break;
+ 225:bootloader/tftp.c **** 	}
+ 226:bootloader/tftp.c **** 	return;
+ 227:bootloader/tftp.c **** }
+ 228:bootloader/tftp.c **** 
+ 229:bootloader/tftp.c **** //----------------------------------------------------------------------------
+ 230:bootloader/tftp.c **** // Watchdog functions: terminate bootloader if waiting for answers times out
+ 231:bootloader/tftp.c **** //----------------------------------------------------------------------------
+ 232:bootloader/tftp.c **** 
+ 233:bootloader/tftp.c **** //----------------------------------------------------------------------------
+ 234:bootloader/tftp.c **** // restart countdown of the watchdog
+ 235:bootloader/tftp.c **** void tftp_watchdogrestart()
+ 236:bootloader/tftp.c **** {
+ 237:bootloader/tftp.c **** 	tftp_watchdog = TFTP_WATCHDOG;
+ 400               	.LM23:
+ 401 01a0 80ED      		ldi r24,lo8(2000)
+ 402 01a2 97E0      		ldi r25,hi8(2000)
+ 403 01a4 9093 0000 		sts tftp_watchdog+1,r25
+ 404 01a8 8093 0000 		sts tftp_watchdog,r24
+ 405               	.LBE7:
+ 406               	.LBE6:
+ 147:bootloader/tftp.c **** 	tftp_block = TFTP_REC;
+ 408               	.LM24:
+ 409 01ac 81E0      		ldi r24,lo8(1)
+ 410 01ae 90E0      		ldi r25,hi8(1)
+ 411 01b0 9093 0000 		sts tftp_block+1,r25
+ 412 01b4 8093 0000 		sts tftp_block,r24
+ 413               	/* epilogue start */
+ 148:bootloader/tftp.c **** }
+ 415               	.LM25:
+ 416 01b8 6A96      		adiw r28,26
+ 417 01ba 0FB6      		in __tmp_reg__,__SREG__
+ 418 01bc F894      		cli
+ 419 01be DEBF      		out __SP_H__,r29
+ 420 01c0 0FBE      		out __SREG__,__tmp_reg__
+ 421 01c2 CDBF      		out __SP_L__,r28
+ 422 01c4 CF91      		pop r28
+ 423 01c6 DF91      		pop r29
+ 424 01c8 1F91      		pop r17
+ 425 01ca 0F91      		pop r16
+ 426 01cc FF90      		pop r15
+ 427 01ce EF90      		pop r14
+ 428 01d0 DF90      		pop r13
+ 429 01d2 CF90      		pop r12
+ 430 01d4 BF90      		pop r11
+ 431 01d6 AF90      		pop r10
+ 432 01d8 0895      		ret
+ 439               	.Lscope2:
+ 441               		.stabd	78,0,0
+ 442               		.section	.text.tftp_ack,"ax",@progbits
+ 447               	.global	tftp_ack
+ 449               	tftp_ack:
+ 450               		.stabd	46,0,0
+ 153:bootloader/tftp.c **** {
+ 452               	.LM26:
+ 453               	.LFBB3:
+ 454 0000 EF92      		push r14
+ 455 0002 FF92      		push r15
+ 456 0004 0F93      		push r16
+ 457 0006 1F93      		push r17
+ 458               	/* prologue: function */
+ 459               	/* frame size = 0 */
+ 460               	/* stack size = 4 */
+ 461               	.L__stack_usage = 4
+ 462 0008 7B01      		movw r14,r22
+ 463 000a 8C01      		movw r16,r24
+ 464 000c F901      		movw r30,r18
+ 154:bootloader/tftp.c **** 	tftp_header_p->type = LBBL_ENDIAN_INT((int)TFTP_ACK);			// set packet type to ACK
+ 466               	.LM27:
+ 467 000e 80E0      		ldi r24,lo8(1024)
+ 468 0010 94E0      		ldi r25,hi8(1024)
+ 469 0012 9183      		std Z+1,r25
+ 470 0014 8083      		st Z,r24
+ 155:bootloader/tftp.c **** 	tftp_header_p->u.ack.block = LBBL_ENDIAN_INT((int)tftp_block);	// ack last packet
+ 472               	.LM28:
+ 473 0016 7091 0000 		lds r23,tftp_block
+ 474 001a 60E0      		ldi r22,lo8(0)
+ 475 001c 8091 0000 		lds r24,tftp_block+1
+ 476 0020 90E0      		ldi r25,lo8(0)
+ 477 0022 860F      		add r24,r22
+ 478 0024 971F      		adc r25,r23
+ 479 0026 9383      		std Z+3,r25
+ 480 0028 8283      		std Z+2,r24
+ 156:bootloader/tftp.c **** 	create_new_udp_packet(4,TFTP_CLIENT_PORT,src_port,src_ip);		// send ACK
+ 482               	.LM29:
+ 483 002a 84E0      		ldi r24,lo8(4)
+ 484 002c 90E0      		ldi r25,hi8(4)
+ 485 002e 65E5      		ldi r22,lo8(-23467)
+ 486 0030 74EA      		ldi r23,hi8(-23467)
+ 487 0032 9801      		movw r18,r16
+ 488 0034 8701      		movw r16,r14
+ 489 0036 0E94 0000 		call create_new_udp_packet
+ 490               	.LBB8:
+ 491               	.LBB9:
+ 493               	.LM30:
+ 494 003a 80ED      		ldi r24,lo8(2000)
+ 495 003c 97E0      		ldi r25,hi8(2000)
+ 496 003e 9093 0000 		sts tftp_watchdog+1,r25
+ 497 0042 8093 0000 		sts tftp_watchdog,r24
+ 498               	/* epilogue start */
+ 499               	.LBE9:
+ 500               	.LBE8:
+ 158:bootloader/tftp.c **** }
+ 502               	.LM31:
+ 503 0046 1F91      		pop r17
+ 504 0048 0F91      		pop r16
+ 505 004a FF90      		pop r15
+ 506 004c EF90      		pop r14
+ 507 004e 0895      		ret
+ 509               	.Lscope3:
+ 511               		.stabd	78,0,0
+ 512               		.data
+ 513               	.LC5:
+ 514 0035 4572 7220 		.string	"Err %s\r\n"
+ 514      2573 0D0A 
+ 514      00
+ 515               	.LC6:
+ 516 003e 4572 7220 		.string	"Err %i@%i\r\n"
+ 516      2569 4025 
+ 516      690D 0A00 
+ 517               	.LC7:
+ 518 004a 2E00      		.string	"."
+ 519               	.LC8:
+ 520 004c 426C 6F63 		.string	"Block %i, %i exp.\r\n"
+ 520      6B20 2569 
+ 520      2C20 2569 
+ 520      2065 7870 
+ 520      2E0D 0A00 
+ 521               	.LC9:
+ 522 0060 646F 6E65 		.string	"done\r\n"
+ 522      0D0A 00
+ 523               	.LC10:
+ 524 0067 4572 7220 		.string	"Err Type %i\r\n"
+ 524      5479 7065 
+ 524      2025 690D 
+ 524      0A00 
+ 525               		.section	.text.tftp_get,"ax",@progbits
+ 529               	.global	tftp_get
+ 531               	tftp_get:
+ 532               		.stabd	46,0,0
+ 163:bootloader/tftp.c **** {
+ 534               	.LM32:
+ 535               	.LFBB4:
+ 536 0000 8F92      		push r8
+ 537 0002 9F92      		push r9
+ 538 0004 AF92      		push r10
+ 539 0006 BF92      		push r11
+ 540 0008 CF92      		push r12
+ 541 000a DF92      		push r13
+ 542 000c EF92      		push r14
+ 543 000e FF92      		push r15
+ 544 0010 0F93      		push r16
+ 545 0012 1F93      		push r17
+ 546 0014 CF93      		push r28
+ 547 0016 DF93      		push r29
+ 548               	/* prologue: function */
+ 549               	/* frame size = 0 */
+ 550               	/* stack size = 12 */
+ 551               	.L__stack_usage = 12
+ 552 0018 6B01      		movw r12,r22
+ 553 001a 7C01      		movw r14,r24
+ 554 001c 4A01      		movw r8,r20
+ 173:bootloader/tftp.c **** 	if ( tftp_block == TFTP_OFF ) {
+ 556               	.LM33:
+ 557 001e 8091 0000 		lds r24,tftp_block
+ 558 0022 9091 0000 		lds r25,tftp_block+1
+ 559 0026 0097      		sbiw r24,0
+ 560 0028 01F4      		brne .+2
+ 561 002a 00C0      		rjmp .L9
+ 179:bootloader/tftp.c **** 	switch ( LBBL_ENDIAN_INT(tftp_header_p->type) ) {
+ 563               	.LM34:
+ 564 002c 2091 0000 		lds r18,eth_buffer+42
+ 565 0030 3091 0000 		lds r19,eth_buffer+42+1
+ 566 0034 3227      		eor r19,r18
+ 567 0036 2327      		eor r18,r19
+ 568 0038 3227      		eor r19,r18
+ 569 003a 2330      		cpi r18,3
+ 570 003c 3105      		cpc r19,__zero_reg__
+ 571 003e 01F0      		breq .L12
+ 572 0040 2530      		cpi r18,5
+ 573 0042 3105      		cpc r19,__zero_reg__
+ 574 0044 01F0      		breq .+2
+ 575 0046 00C0      		rjmp .L21
+ 181:bootloader/tftp.c **** 			TFTP_ERROR ( "Err %s\r\n", tftp_header_p->u.error.msg );
+ 577               	.LM35:
+ 578 0048 00D0      		rcall .
+ 579 004a 00D0      		rcall .
+ 580 004c 80E0      		ldi r24,lo8(.LC5)
+ 581 004e 90E0      		ldi r25,hi8(.LC5)
+ 582 0050 ADB7      		in r26,__SP_L__
+ 583 0052 BEB7      		in r27,__SP_H__
+ 584 0054 1296      		adiw r26,1+1
+ 585 0056 9C93      		st X,r25
+ 586 0058 8E93      		st -X,r24
+ 587 005a 1197      		sbiw r26,1
+ 588 005c 80E0      		ldi r24,lo8(eth_buffer+46)
+ 589 005e 90E0      		ldi r25,hi8(eth_buffer+46)
+ 590 0060 1496      		adiw r26,3+1
+ 591 0062 9C93      		st X,r25
+ 592 0064 8E93      		st -X,r24
+ 593 0066 1397      		sbiw r26,3
+ 594 0068 0E94 0000 		call console_write_P
+ 182:bootloader/tftp.c **** 			tftp_block = TFTP_OFF;
+ 596               	.LM36:
+ 597 006c 1092 0000 		sts tftp_block+1,__zero_reg__
+ 598 0070 1092 0000 		sts tftp_block,__zero_reg__
+ 183:bootloader/tftp.c **** 	  		ihex_appstart();
+ 600               	.LM37:
+ 601 0074 0F90      		pop __tmp_reg__
+ 602 0076 0F90      		pop __tmp_reg__
+ 603 0078 0F90      		pop __tmp_reg__
+ 604 007a 0F90      		pop __tmp_reg__
+ 605 007c 00C0      		rjmp .L22
+ 606               	.L12:
+ 187:bootloader/tftp.c **** 			data_len = UDP_DATA_END_VAR - UDP_DATA_START - 4;
+ 608               	.LM38:
+ 609 007e 2091 0000 		lds r18,eth_buffer+17
+ 610 0082 C22F      		mov r28,r18
+ 611 0084 D0E0      		ldi r29,lo8(0)
+ 612 0086 A097      		sbiw r28,32
+ 613 0088 3091 0000 		lds r19,eth_buffer+16
+ 614 008c 20E0      		ldi r18,lo8(0)
+ 615 008e C20F      		add r28,r18
+ 616 0090 D31F      		adc r29,r19
+ 188:bootloader/tftp.c **** 			block = LBBL_ENDIAN_INT(tftp_header_p->u.data.block);
+ 618               	.LM39:
+ 619 0092 2091 0000 		lds r18,eth_buffer+44
+ 620 0096 3091 0000 		lds r19,eth_buffer+44+1
+ 621 009a 3227      		eor r19,r18
+ 622 009c 2327      		eor r18,r19
+ 623 009e 3227      		eor r19,r18
+ 194:bootloader/tftp.c **** 			if ( block == tftp_block ) {	// the expected next packet?
+ 625               	.LM40:
+ 626 00a0 2817      		cp r18,r24
+ 627 00a2 3907      		cpc r19,r25
+ 628 00a4 01F0      		breq .+2
+ 629 00a6 00C0      		rjmp .L14
+ 162:bootloader/tftp.c **** void tftp_get(unsigned long src_ip, unsigned int src_port)
+ 631               	.LM41:
+ 632 00a8 80E0      		ldi r24,lo8(eth_buffer+46)
+ 633 00aa A82E      		mov r10,r24
+ 634 00ac 80E0      		ldi r24,hi8(eth_buffer+46)
+ 635 00ae B82E      		mov r11,r24
+ 636 00b0 80E0      		ldi r24,lo8(0)
+ 637 00b2 00E0      		ldi r16,lo8(0)
+ 638 00b4 10E0      		ldi r17,hi8(0)
+ 639 00b6 00C0      		rjmp .L15
+ 640               	.L17:
+ 197:bootloader/tftp.c **** 					rc = ihex_flash ( tftp_header_p->u.data.data[i] );
+ 642               	.LM42:
+ 643 00b8 F501      		movw r30,r10
+ 644 00ba 8191      		ld r24,Z+
+ 645 00bc 5F01      		movw r10,r30
+ 646 00be 0E94 0000 		call ihex_flash
+ 196:bootloader/tftp.c **** 				for (i=0; (i<data_len) && !rc; i++)
+ 648               	.LM43:
+ 649 00c2 0F5F      		subi r16,lo8(-(1))
+ 650 00c4 1F4F      		sbci r17,hi8(-(1))
+ 651               	.L15:
+ 652 00c6 0C17      		cp r16,r28
+ 653 00c8 1D07      		cpc r17,r29
+ 654 00ca 04F4      		brge .L16
+ 196:bootloader/tftp.c **** 				for (i=0; (i<data_len) && !rc; i++)
+ 656               	.LM44:
+ 657 00cc 8823      		tst r24
+ 658 00ce 01F0      		breq .L17
+ 659 00d0 00C0      		rjmp .L18
+ 660               	.L16:
+ 199:bootloader/tftp.c **** 				if (rc) {					// error while interpreting the intel hex contents?
+ 662               	.LM45:
+ 663 00d2 8823      		tst r24
+ 664 00d4 01F0      		breq .L19
+ 665               	.L18:
+ 200:bootloader/tftp.c **** 					TFTP_ERROR ( "Err %i@%i\r\n", (int)rc, i-1 );
+ 667               	.LM46:
+ 668 00d6 00D0      		rcall .
+ 669 00d8 00D0      		rcall .
+ 670 00da 00D0      		rcall .
+ 671 00dc EDB7      		in r30,__SP_L__
+ 672 00de FEB7      		in r31,__SP_H__
+ 673 00e0 3196      		adiw r30,1
+ 674 00e2 20E0      		ldi r18,lo8(.LC6)
+ 675 00e4 30E0      		ldi r19,hi8(.LC6)
+ 676 00e6 ADB7      		in r26,__SP_L__
+ 677 00e8 BEB7      		in r27,__SP_H__
+ 678 00ea 1296      		adiw r26,1+1
+ 679 00ec 3C93      		st X,r19
+ 680 00ee 2E93      		st -X,r18
+ 681 00f0 1197      		sbiw r26,1
+ 682 00f2 8283      		std Z+2,r24
+ 683 00f4 1382      		std Z+3,__zero_reg__
+ 684 00f6 0150      		subi r16,lo8(-(-1))
+ 685 00f8 1040      		sbci r17,hi8(-(-1))
+ 686 00fa 1583      		std Z+5,r17
+ 687 00fc 0483      		std Z+4,r16
+ 688 00fe 0E94 0000 		call console_write_P
+ 201:bootloader/tftp.c **** 					tftp_block = TFTP_OFF;
+ 690               	.LM47:
+ 691 0102 1092 0000 		sts tftp_block+1,__zero_reg__
+ 692 0106 1092 0000 		sts tftp_block,__zero_reg__
+ 202:bootloader/tftp.c **** 					return;
+ 694               	.LM48:
+ 695 010a EDB7      		in r30,__SP_L__
+ 696 010c FEB7      		in r31,__SP_H__
+ 697 010e 3696      		adiw r30,6
+ 698 0110 0FB6      		in __tmp_reg__,__SREG__
+ 699 0112 F894      		cli
+ 700 0114 FEBF      		out __SP_H__,r31
+ 701 0116 0FBE      		out __SREG__,__tmp_reg__
+ 702 0118 EDBF      		out __SP_L__,r30
+ 703 011a 00C0      		rjmp .L9
+ 704               	.L19:
+ 204:bootloader/tftp.c **** 					TFTP_MSG ( "." );
+ 706               	.LM49:
+ 707 011c 00D0      		rcall .
+ 708 011e 80E0      		ldi r24,lo8(.LC7)
+ 709 0120 90E0      		ldi r25,hi8(.LC7)
+ 710 0122 ADB7      		in r26,__SP_L__
+ 711 0124 BEB7      		in r27,__SP_H__
+ 712 0126 1296      		adiw r26,1+1
+ 713 0128 9C93      		st X,r25
+ 714 012a 8E93      		st -X,r24
+ 715 012c 1197      		sbiw r26,1
+ 716 012e 0E94 0000 		call console_write_P
+ 205:bootloader/tftp.c **** 					tftp_ack(src_ip, src_port, tftp_header_p);
+ 718               	.LM50:
+ 719 0132 0F90      		pop __tmp_reg__
+ 720 0134 0F90      		pop __tmp_reg__
+ 721 0136 C701      		movw r24,r14
+ 722 0138 B601      		movw r22,r12
+ 723 013a A401      		movw r20,r8
+ 724 013c 20E0      		ldi r18,lo8(eth_buffer+42)
+ 725 013e 30E0      		ldi r19,hi8(eth_buffer+42)
+ 726 0140 0E94 0000 		call tftp_ack
+ 206:bootloader/tftp.c **** 					tftp_block++;
+ 728               	.LM51:
+ 729 0144 8091 0000 		lds r24,tftp_block
+ 730 0148 9091 0000 		lds r25,tftp_block+1
+ 731 014c 0196      		adiw r24,1
+ 732 014e 9093 0000 		sts tftp_block+1,r25
+ 733 0152 8093 0000 		sts tftp_block,r24
+ 734 0156 00C0      		rjmp .L20
+ 735               	.L14:
+ 210:bootloader/tftp.c **** 				TFTP_ERROR ( "Block %i, %i exp.\r\n", block, tftp_block );
+ 737               	.LM52:
+ 738 0158 00D0      		rcall .
+ 739 015a 00D0      		rcall .
+ 740 015c 00D0      		rcall .
+ 741 015e EDB7      		in r30,__SP_L__
+ 742 0160 FEB7      		in r31,__SP_H__
+ 743 0162 3196      		adiw r30,1
+ 744 0164 40E0      		ldi r20,lo8(.LC8)
+ 745 0166 50E0      		ldi r21,hi8(.LC8)
+ 746 0168 ADB7      		in r26,__SP_L__
+ 747 016a BEB7      		in r27,__SP_H__
+ 748 016c 1296      		adiw r26,1+1
+ 749 016e 5C93      		st X,r21
+ 750 0170 4E93      		st -X,r20
+ 751 0172 1197      		sbiw r26,1
+ 752 0174 3383      		std Z+3,r19
+ 753 0176 2283      		std Z+2,r18
+ 754 0178 9583      		std Z+5,r25
+ 755 017a 8483      		std Z+4,r24
+ 756 017c 0E94 0000 		call console_write_P
+ 211:bootloader/tftp.c **** 				tftp_ack(src_ip, src_port, tftp_header_p);	// ack the last block that was correct
+ 758               	.LM53:
+ 759 0180 EDB7      		in r30,__SP_L__
+ 760 0182 FEB7      		in r31,__SP_H__
+ 761 0184 3696      		adiw r30,6
+ 762 0186 0FB6      		in __tmp_reg__,__SREG__
+ 763 0188 F894      		cli
+ 764 018a FEBF      		out __SP_H__,r31
+ 765 018c 0FBE      		out __SREG__,__tmp_reg__
+ 766 018e EDBF      		out __SP_L__,r30
+ 767 0190 C701      		movw r24,r14
+ 768 0192 B601      		movw r22,r12
+ 769 0194 A401      		movw r20,r8
+ 770 0196 20E0      		ldi r18,lo8(eth_buffer+42)
+ 771 0198 30E0      		ldi r19,hi8(eth_buffer+42)
+ 772 019a 0E94 0000 		call tftp_ack
+ 773               	.L20:
+ 215:bootloader/tftp.c **** 			if ( data_len != 512 ) {
+ 775               	.LM54:
+ 776 019e F2E0      		ldi r31,hi8(512)
+ 777 01a0 C030      		cpi r28,lo8(512)
+ 778 01a2 DF07      		cpc r29,r31
+ 779 01a4 01F0      		breq .L9
+ 216:bootloader/tftp.c **** 			  TFTP_MSG ( "done\r\n" );
+ 781               	.LM55:
+ 782 01a6 00D0      		rcall .
+ 783 01a8 80E0      		ldi r24,lo8(.LC9)
+ 784 01aa 90E0      		ldi r25,hi8(.LC9)
+ 785 01ac ADB7      		in r26,__SP_L__
+ 786 01ae BEB7      		in r27,__SP_H__
+ 787 01b0 1296      		adiw r26,1+1
+ 788 01b2 9C93      		st X,r25
+ 789 01b4 8E93      		st -X,r24
+ 790 01b6 1197      		sbiw r26,1
+ 791 01b8 0E94 0000 		call console_write_P
+ 217:bootloader/tftp.c **** 			  tftp_block = TFTP_OFF;
+ 793               	.LM56:
+ 794 01bc 1092 0000 		sts tftp_block+1,__zero_reg__
+ 795 01c0 1092 0000 		sts tftp_block,__zero_reg__
+ 218:bootloader/tftp.c **** 			  ihex_appstart();
+ 797               	.LM57:
+ 798 01c4 0F90      		pop __tmp_reg__
+ 799 01c6 0F90      		pop __tmp_reg__
+ 800               	.L22:
+ 801 01c8 0E94 0000 		call ihex_appstart
+ 802 01cc 00C0      		rjmp .L9
+ 803               	.L21:
+ 222:bootloader/tftp.c **** 			TFTP_ERROR ( "Err Type %i\r\n", LBBL_ENDIAN_INT(tftp_header_p->type) );
+ 805               	.LM58:
+ 806 01ce 00D0      		rcall .
+ 807 01d0 00D0      		rcall .
+ 808 01d2 80E0      		ldi r24,lo8(.LC10)
+ 809 01d4 90E0      		ldi r25,hi8(.LC10)
+ 810 01d6 EDB7      		in r30,__SP_L__
+ 811 01d8 FEB7      		in r31,__SP_H__
+ 812 01da 9283      		std Z+2,r25
+ 813 01dc 8183      		std Z+1,r24
+ 814 01de 3483      		std Z+4,r19
+ 815 01e0 2383      		std Z+3,r18
+ 816 01e2 0E94 0000 		call console_write_P
+ 223:bootloader/tftp.c **** 			tftp_block = TFTP_OFF;
+ 818               	.LM59:
+ 819 01e6 1092 0000 		sts tftp_block+1,__zero_reg__
+ 820 01ea 1092 0000 		sts tftp_block,__zero_reg__
+ 224:bootloader/tftp.c **** 			break;
+ 822               	.LM60:
+ 823 01ee 0F90      		pop __tmp_reg__
+ 824 01f0 0F90      		pop __tmp_reg__
+ 825 01f2 0F90      		pop __tmp_reg__
+ 826 01f4 0F90      		pop __tmp_reg__
+ 827               	.L9:
+ 828               	/* epilogue start */
+ 227:bootloader/tftp.c **** }
+ 830               	.LM61:
+ 831 01f6 DF91      		pop r29
+ 832 01f8 CF91      		pop r28
+ 833 01fa 1F91      		pop r17
+ 834 01fc 0F91      		pop r16
+ 835 01fe FF90      		pop r15
+ 836 0200 EF90      		pop r14
+ 837 0202 DF90      		pop r13
+ 838 0204 CF90      		pop r12
+ 839 0206 BF90      		pop r11
+ 840 0208 AF90      		pop r10
+ 841 020a 9F90      		pop r9
+ 842 020c 8F90      		pop r8
+ 843 020e 0895      		ret
+ 850               	.Lscope4:
+ 852               		.stabd	78,0,0
+ 853               		.section	.text.tftp_watchdogrestart,"ax",@progbits
+ 855               	.global	tftp_watchdogrestart
+ 857               	tftp_watchdogrestart:
+ 858               		.stabd	46,0,0
+ 236:bootloader/tftp.c **** {
+ 860               	.LM62:
+ 861               	.LFBB5:
+ 862               	/* prologue: function */
+ 863               	/* frame size = 0 */
+ 864               	/* stack size = 0 */
+ 865               	.L__stack_usage = 0
+ 867               	.LM63:
+ 868 0000 80ED      		ldi r24,lo8(2000)
+ 869 0002 97E0      		ldi r25,hi8(2000)
+ 870 0004 9093 0000 		sts tftp_watchdog+1,r25
+ 871 0008 8093 0000 		sts tftp_watchdog,r24
+ 872               	/* epilogue start */
+ 238:bootloader/tftp.c **** }
+ 874               	.LM64:
+ 875 000c 0895      		ret
+ 877               	.Lscope5:
+ 879               		.stabd	78,0,0
+ 880               		.data
+ 881               	.LC11:
+ 882 0075 546F 7574 		.string	"Tout\r\n"
+ 882      0D0A 00
+ 883               		.section	.text.tftp_watchdogcheck,"ax",@progbits
+ 885               	.global	tftp_watchdogcheck
+ 887               	tftp_watchdogcheck:
+ 888               		.stabd	46,0,0
+ 239:bootloader/tftp.c **** 
+ 240:bootloader/tftp.c **** //----------------------------------------------------------------------------
+ 241:bootloader/tftp.c **** // check if watchdog has reached the end (value <= 0)
+ 242:bootloader/tftp.c **** void tftp_watchdogcheck()
+ 243:bootloader/tftp.c **** {
+ 890               	.LM65:
+ 891               	.LFBB6:
+ 892               	/* prologue: function */
+ 893               	/* frame size = 0 */
+ 894               	/* stack size = 0 */
+ 895               	.L__stack_usage = 0
+ 244:bootloader/tftp.c **** 	if ( tftp_watchdog <= 0 ) {
+ 897               	.LM66:
+ 898 0000 8091 0000 		lds r24,tftp_watchdog
+ 899 0004 9091 0000 		lds r25,tftp_watchdog+1
+ 900 0008 1816      		cp __zero_reg__,r24
+ 901 000a 1906      		cpc __zero_reg__,r25
+ 902 000c 04F0      		brlt .L24
+ 245:bootloader/tftp.c **** 		tftp_block = TFTP_OFF;
+ 904               	.LM67:
+ 905 000e 1092 0000 		sts tftp_block+1,__zero_reg__
+ 906 0012 1092 0000 		sts tftp_block,__zero_reg__
+ 246:bootloader/tftp.c **** 		TFTP_ERROR ( "Tout\r\n" );
+ 908               	.LM68:
+ 909 0016 00D0      		rcall .
+ 910 0018 80E0      		ldi r24,lo8(.LC11)
+ 911 001a 90E0      		ldi r25,hi8(.LC11)
+ 912 001c EDB7      		in r30,__SP_L__
+ 913 001e FEB7      		in r31,__SP_H__
+ 914 0020 9283      		std Z+2,r25
+ 915 0022 8183      		std Z+1,r24
+ 916 0024 0E94 0000 		call console_write_P
+ 247:bootloader/tftp.c **** 		ihex_appstart();
+ 918               	.LM69:
+ 919 0028 0F90      		pop __tmp_reg__
+ 920 002a 0F90      		pop __tmp_reg__
+ 921 002c 0E94 0000 		call ihex_appstart
+ 922               	.L24:
+ 923 0030 0895      		ret
+ 925               	.Lscope6:
+ 927               		.stabd	78,0,0
+ 928               	.global	tftp_block
+ 929               	.global	tftp_block
+ 930               		.section .bss
+ 933               	tftp_block:
+ 934 0000 0000      		.skip 2,0
+ 935               	.global	tftp_watchdog
+ 936               		.data
+ 939               	tftp_watchdog:
+ 940 007c 3075      		.word	30000
+ 941               		.comm myip,4,1
+ 942               		.comm IP_id_counter,2,1
+ 943               		.comm eth_buffer,1201,1
+ 944               		.comm eth_len,2,1
+ 945               		.comm arp_entry,50,1
+ 946               		.comm tftp_server_ip,4,1
+ 955               		.text
+ 957               	.Letext0:
+ 958               	.global __do_copy_data
+ 959               	.global __do_clear_bss
+DEFINED SYMBOLS
+                            *ABS*:00000000 tftp.c
+     /tmp/ccAUkPIj.s:2      *ABS*:0000003f __SREG__
+     /tmp/ccAUkPIj.s:3      *ABS*:0000003e __SP_H__
+     /tmp/ccAUkPIj.s:4      *ABS*:0000003d __SP_L__
+     /tmp/ccAUkPIj.s:5      *ABS*:00000034 __CCP__
+     /tmp/ccAUkPIj.s:6      *ABS*:00000000 __tmp_reg__
+     /tmp/ccAUkPIj.s:7      *ABS*:00000001 __zero_reg__
+     /tmp/ccAUkPIj.s:124    .text.tftp_init:00000000 tftp_init
+     /tmp/ccAUkPIj.s:939    .data:0000007c tftp_watchdog
+     /tmp/ccAUkPIj.s:933    .bss:00000000 tftp_block
+     /tmp/ccAUkPIj.s:169    .text.tftp_request:00000000 tftp_request
+                            *COM*:00000004 tftp_server_ip
+                            *COM*:000004b1 eth_buffer
+     /tmp/ccAUkPIj.s:449    .text.tftp_ack:00000000 tftp_ack
+     /tmp/ccAUkPIj.s:531    .text.tftp_get:00000000 tftp_get
+     /tmp/ccAUkPIj.s:857    .text.tftp_watchdogrestart:00000000 tftp_watchdogrestart
+     /tmp/ccAUkPIj.s:887    .text.tftp_watchdogcheck:00000000 tftp_watchdogcheck
+                            *COM*:00000004 myip
+                            *COM*:00000002 IP_id_counter
+                            *COM*:00000002 eth_len
+                            *COM*:00000032 arp_entry
+
+UNDEFINED SYMBOLS
+ihex_init
+ihex_appstart
+para_getip
+console_write_P
+arp_request
+strcpy
+para_getstring
+create_new_udp_packet
+ihex_flash
+__do_copy_data
+__do_clear_bss

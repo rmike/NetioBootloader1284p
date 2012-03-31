@@ -1,0 +1,32 @@
+   1               		.file	"rtl8019.c"
+   2               	__SREG__ = 0x3f
+   3               	__SP_H__ = 0x3e
+   4               	__SP_L__ = 0x3d
+   5               	__CCP__ = 0x34
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+  10               		.text
+  11               	.Ltext0:
+ 116               		.comm myip,4,1
+ 117               		.comm IP_id_counter,2,1
+ 118               		.comm eth_buffer,1201,1
+ 119               		.comm eth_len,2,1
+ 120               		.comm arp_entry,50,1
+ 127               	.Letext0:
+ 128               	.global __do_clear_bss
+DEFINED SYMBOLS
+                            *ABS*:00000000 rtl8019.c
+     /tmp/ccRbWzwk.s:2      *ABS*:0000003f __SREG__
+     /tmp/ccRbWzwk.s:3      *ABS*:0000003e __SP_H__
+     /tmp/ccRbWzwk.s:4      *ABS*:0000003d __SP_L__
+     /tmp/ccRbWzwk.s:5      *ABS*:00000034 __CCP__
+     /tmp/ccRbWzwk.s:6      *ABS*:00000000 __tmp_reg__
+     /tmp/ccRbWzwk.s:7      *ABS*:00000001 __zero_reg__
+                            *COM*:00000004 myip
+                            *COM*:00000002 IP_id_counter
+                            *COM*:000004b1 eth_buffer
+                            *COM*:00000002 eth_len
+                            *COM*:00000032 arp_entry
+
+UNDEFINED SYMBOLS
+__do_clear_bss

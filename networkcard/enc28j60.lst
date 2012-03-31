@@ -1,0 +1,1548 @@
+   1               		.file	"enc28j60.c"
+   2               	__SREG__ = 0x3f
+   3               	__SP_H__ = 0x3e
+   4               	__SP_L__ = 0x3d
+   5               	__CCP__ = 0x34
+   6               	__tmp_reg__ = 0
+   7               	__zero_reg__ = 1
+  10               		.text
+  11               	.Ltext0:
+ 116               		.section	.text.enc28j60_read_buffer,"ax",@progbits
+ 120               	.global	enc28j60_read_buffer
+ 122               	enc28j60_read_buffer:
+ 123               		.stabd	46,0,0
+   1:networkcard/enc28j60.c **** /*
+   2:networkcard/enc28j60.c **** ,-----------------------------------------------------------------------------------------.
+   3:networkcard/enc28j60.c **** | this file implements the driver for the microchip enc28j60 ethernet controller
+   4:networkcard/enc28j60.c **** | - some ideas are based on the enc28j60 driver of the procyon avrlib ;)
+   5:networkcard/enc28j60.c **** |
+   6:networkcard/enc28j60.c **** | BUGS:
+   7:networkcard/enc28j60.c **** | - sometimes enc28j60 is not correctly initialised (not receiving any packets)
+   8:networkcard/enc28j60.c **** |
+   9:networkcard/enc28j60.c **** | Author   : Simon Schulz / avr{AT}auctionant.de
+  10:networkcard/enc28j60.c **** | this version 2007'0819 improved by eProfi (PHLCON 3472, skip select_bank for regs 1b..1f,
+  11:networkcard/enc28j60.c **** |   enc28j60_select_bank  inlined into  enc28j60_read_address  and  enc28j60_write_address)
+  12:networkcard/enc28j60.c **** |-----------------------------------------------------------------------------------------
+  13:networkcard/enc28j60.c **** | License:
+  14:networkcard/enc28j60.c **** | This program is free software; you can redistribute it and/or modify it under
+  15:networkcard/enc28j60.c **** | the terms of the GNU General Public License as published by the Free Software
+  16:networkcard/enc28j60.c **** | Foundation; either version 2 of the License, or (at your option) any later
+  17:networkcard/enc28j60.c **** | version.
+  18:networkcard/enc28j60.c **** | This program is distributed in the hope that it will be useful, but
+  19:networkcard/enc28j60.c **** |
+  20:networkcard/enc28j60.c **** | WITHOUT ANY WARRANTY;
+  21:networkcard/enc28j60.c **** |
+  22:networkcard/enc28j60.c **** | without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+  23:networkcard/enc28j60.c **** | PURPOSE. See the GNU General Public License for more details.
+  24:networkcard/enc28j60.c **** |
+  25:networkcard/enc28j60.c **** | You should have received a copy of the GNU General Public License along with
+  26:networkcard/enc28j60.c **** | this program; if not, write to the Free Software Foundation, Inc., 51
+  27:networkcard/enc28j60.c **** | Franklin St, Fifth Floor, Boston, MA 02110, USA
+  28:networkcard/enc28j60.c **** |
+  29:networkcard/enc28j60.c **** | http://www.gnu.de/gpl-ger.html
+  30:networkcard/enc28j60.c **** `-----------------------------------------------------------------------------------------*/
+  31:networkcard/enc28j60.c **** #include "enc28j60.h"
+  32:networkcard/enc28j60.c **** 
+  33:networkcard/enc28j60.c **** #if USE_ENC28J60
+  34:networkcard/enc28j60.c **** 
+  35:networkcard/enc28j60.c **** unsigned char enc28j60_current_bank;
+  36:networkcard/enc28j60.c **** unsigned int  enc28j60_next_packet_ptr;
+  37:networkcard/enc28j60.c **** //unsigned char enc28j60_revision;
+  38:networkcard/enc28j60.c **** #include <avr/pgmspace.h>
+  39:networkcard/enc28j60.c **** 
+  40:networkcard/enc28j60.c **** unsigned char mymac[6] = MAC;
+  41:networkcard/enc28j60.c **** 
+  42:networkcard/enc28j60.c **** //store enc28j60 config in program memory
+  43:networkcard/enc28j60.c **** //syntax: <REGx>, <REGVALx>, <REGy>, <REGVALy>,...
+  44:networkcard/enc28j60.c **** unsigned char enc28j60_config[] = {
+  45:networkcard/enc28j60.c **** 	//setup bank0 (config stored in progmem, see above)
+  46:networkcard/enc28j60.c **** 	//tx buffer:
+  47:networkcard/enc28j60.c **** 	ENC28J60_REG_ETXSTL, LO8(ENC28J60_TX_BUFFER_START), //start lo
+  48:networkcard/enc28j60.c **** 	ENC28J60_REG_ETXSTH, HI8(ENC28J60_TX_BUFFER_START), //start hi
+  49:networkcard/enc28j60.c **** 	ENC28J60_REG_ETXNDL, LO8(ENC28J60_TX_BUFFER_END  ), //end lo
+  50:networkcard/enc28j60.c **** 	ENC28J60_REG_ETXNDH, HI8(ENC28J60_TX_BUFFER_END  ), //end hi
+  51:networkcard/enc28j60.c **** 	//rx buffer
+  52:networkcard/enc28j60.c **** 	ENC28J60_REG_ERXSTL, LO8(ENC28J60_RX_BUFFER_START), //start lo
+  53:networkcard/enc28j60.c **** 	ENC28J60_REG_ERXSTH, HI8(ENC28J60_RX_BUFFER_START), //start hi
+  54:networkcard/enc28j60.c **** 	ENC28J60_REG_ERXNDL, LO8(ENC28J60_RX_BUFFER_END  ), //end lo
+  55:networkcard/enc28j60.c **** 	ENC28J60_REG_ERXNDH, HI8(ENC28J60_RX_BUFFER_END  ), //end hi
+  56:networkcard/enc28j60.c **** 	//rx ptr:
+  57:networkcard/enc28j60.c **** 	//ENC28J60_REG_ERDPTL, lo8(ENC28J60_RX_BUFFER_START+1),
+  58:networkcard/enc28j60.c **** 	//ENC28J60_REG_ERDPTH, hi8(ENC28J60_RX_BUFFER_START+1),
+  59:networkcard/enc28j60.c **** 
+  60:networkcard/enc28j60.c **** 	//setup bank2: (see microchip datasheet p.36)
+  61:networkcard/enc28j60.c **** 	//1.) clear the MARST bit in MACON2.
+  62:networkcard/enc28j60.c **** 	ENC28J60_REG_MACON2, 	0x00,
+  63:networkcard/enc28j60.c **** 	//2.) mac rx enable, activate pause control frame support
+  64:networkcard/enc28j60.c **** 	ENC28J60_REG_MACON1, 	((1<<ENC28J60_BIT_MARXEN)|(1<<ENC28J60_BIT_RXPAUS)|(1<<ENC28J60_BIT_TXPAUS))
+  65:networkcard/enc28j60.c **** 	//3.) setup MACON3: auto padding of small packets, add crc, enable frame length check:
+  66:networkcard/enc28j60.c **** 	ENC28J60_REG_MACON3, 	((1<<ENC28J60_BIT_PADCFG0)|(1<<ENC28J60_BIT_TXCRCEN)|(1<<ENC28J60_BIT_FRMLNE
+  67:networkcard/enc28j60.c **** 	//4.) don't set up MACON4 (use default)
+  68:networkcard/enc28j60.c **** 	//5.) setup maximum framelenght to 1518:
+  69:networkcard/enc28j60.c **** 	ENC28J60_REG_MAMXFLL, LO8(1518),
+  70:networkcard/enc28j60.c **** 	ENC28J60_REG_MAMXFLH, HI8(1518),
+  71:networkcard/enc28j60.c **** 	//6.) set up back-to-back gap: 0x15 for full duplex / 0x12 for half duplex
+  72:networkcard/enc28j60.c **** 	ENC28J60_REG_MABBIPG, 0x12, //half duplex
+  73:networkcard/enc28j60.c **** 	//7.) setup non-back-to-back gap: use 0x12
+  74:networkcard/enc28j60.c **** 	ENC28J60_REG_MAIPGL,  0x12,
+  75:networkcard/enc28j60.c **** 	//8.) setup non-back-to-back gap high byte: 0x0C for half duplex:
+  76:networkcard/enc28j60.c **** 	ENC28J60_REG_MAIPGH,  0x0C, //half duplex
+  77:networkcard/enc28j60.c **** 	//9.) don't change MACLCON1+2 / MACLCON2 might be changed for networks with long wires !
+  78:networkcard/enc28j60.c **** };
+  79:networkcard/enc28j60.c **** 
+  80:networkcard/enc28j60.c **** unsigned char enc28j60_macaddr[] = {
+  81:networkcard/enc28j60.c **** 	//setup bank3:
+  82:networkcard/enc28j60.c **** 	//10.) programm mac address: BYTE BACKWARD !
+  83:networkcard/enc28j60.c **** 	ENC28J60_REG_MAADR5,
+  84:networkcard/enc28j60.c **** 	ENC28J60_REG_MAADR4,
+  85:networkcard/enc28j60.c **** 	ENC28J60_REG_MAADR3,
+  86:networkcard/enc28j60.c **** 	ENC28J60_REG_MAADR2,
+  87:networkcard/enc28j60.c **** 	ENC28J60_REG_MAADR1,
+  88:networkcard/enc28j60.c **** 	ENC28J60_REG_MAADR0
+  89:networkcard/enc28j60.c **** 	};
+  90:networkcard/enc28j60.c **** 
+  91:networkcard/enc28j60.c **** 
+  92:networkcard/enc28j60.c **** //initialise spi & enc28j60
+  93:networkcard/enc28j60.c **** void enc28j60_init(void)
+  94:networkcard/enc28j60.c **** {
+  95:networkcard/enc28j60.c **** 	unsigned char i;
+  96:networkcard/enc28j60.c **** 	unsigned int timeout=0;
+  97:networkcard/enc28j60.c **** 
+  98:networkcard/enc28j60.c **** 	//set bank to invalid value -> bank set will update in any case:
+  99:networkcard/enc28j60.c **** 	enc28j60_current_bank = 0xFF;
+ 100:networkcard/enc28j60.c **** 
+ 101:networkcard/enc28j60.c **** 	//set up port directions:
+ 102:networkcard/enc28j60.c **** 	ENC28J60_DDR |= (1<<ENC28J60_PIN_CS);
+ 103:networkcard/enc28j60.c **** 
+ 104:networkcard/enc28j60.c **** 	//deselect enc28j60:
+ 105:networkcard/enc28j60.c **** 	ENC28J60_CS_HI();
+ 106:networkcard/enc28j60.c **** 
+ 107:networkcard/enc28j60.c **** 	//SPI init
+ 108:networkcard/enc28j60.c **** 	// initialize I/O
+ 109:networkcard/enc28j60.c **** 	PORTB |= (1<<ENC28J60_PIN_SCK); //sck = hi
+ 110:networkcard/enc28j60.c **** 
+ 111:networkcard/enc28j60.c **** 	//spi = output
+ 112:networkcard/enc28j60.c **** 	DDRB |= (1<<ENC28J60_PIN_SS)|(1<<ENC28J60_PIN_CS)|(1<<ENC28J60_PIN_MOSI)|(1<<ENC28J60_PIN_SCK); //
+ 113:networkcard/enc28j60.c **** 	DDRB &= ~(1<<ENC28J60_PIN_MISO); //MISO = IN
+ 114:networkcard/enc28j60.c **** 
+ 115:networkcard/enc28j60.c **** 	//SPI init:
+ 116:networkcard/enc28j60.c **** 	// - master mode
+ 117:networkcard/enc28j60.c **** 	// - positive clock phase
+ 118:networkcard/enc28j60.c **** 	// - msb first
+ 119:networkcard/enc28j60.c **** 	// - maximum SPI speed (fosc/2)
+ 120:networkcard/enc28j60.c **** 	// - enable spi
+ 121:networkcard/enc28j60.c **** 	SPCR = (0<<SPIE)|(1<<SPE)|(0<<DORD)|(1<<MSTR)|(0<<CPOL)|(0<<CPHA)|(0<<SPR1)|(0<<SPR0);
+ 122:networkcard/enc28j60.c **** 
+ 123:networkcard/enc28j60.c **** 	SPSR = (1<<SPI2X);
+ 124:networkcard/enc28j60.c **** 
+ 125:networkcard/enc28j60.c **** 	delay(200000);
+ 126:networkcard/enc28j60.c **** 	enc28j60_spi_write_word (ENC28J60_SOFT_RESET, ENC28J60_SOFT_RESET);
+ 127:networkcard/enc28j60.c **** 	// check CLKRDY bit to see if reset is complete
+ 128:networkcard/enc28j60.c **** 	delay(200000);
+ 129:networkcard/enc28j60.c **** 
+ 130:networkcard/enc28j60.c **** 	//wait for ready flag
+ 131:networkcard/enc28j60.c **** 	while((!(enc28j60_read_address(ENC28J60_REG_ESTAT) & 0x01)) && (timeout<65000)){timeout++;};
+ 132:networkcard/enc28j60.c **** 	if(timeout>=65000){timeout=0;}
+ 133:networkcard/enc28j60.c **** 
+ 134:networkcard/enc28j60.c **** 	//set up rx pointer:
+ 135:networkcard/enc28j60.c **** 	enc28j60_next_packet_ptr = ENC28J60_RX_BUFFER_START;
+ 136:networkcard/enc28j60.c **** 	//enc28j60_next_packet_ptr = 0x0602;
+ 137:networkcard/enc28j60.c **** 
+ 138:networkcard/enc28j60.c **** 	//copy config from progmem to enc28j60:
+ 139:networkcard/enc28j60.c **** 	for(i=0; i<2*16; i+=2){
+ 140:networkcard/enc28j60.c **** 		enc28j60_write_address(enc28j60_config[i+0], enc28j60_config[i+1]);
+ 141:networkcard/enc28j60.c **** 	}
+ 142:networkcard/enc28j60.c **** 
+ 143:networkcard/enc28j60.c **** 	// mac address no longer as define
+ 144:networkcard/enc28j60.c **** 	for (i=0; i<6; i++) {
+ 145:networkcard/enc28j60.c **** 		enc28j60_write_address(enc28j60_macaddr[i], mymac[i]);
+ 146:networkcard/enc28j60.c **** 	}
+ 147:networkcard/enc28j60.c **** 
+ 148:networkcard/enc28j60.c **** 	//setup phy:
+ 149:networkcard/enc28j60.c **** 	enc28j60_write_phy(ENC28J60_PHY_PHCON2, (1<<ENC28J60_BIT_HDLDIS)); //=no loopback of transmitted f
+ 150:networkcard/enc28j60.c **** 
+ 151:networkcard/enc28j60.c **** 	//enable interrups
+ 152:networkcard/enc28j60.c **** 	enc28j60_write_address(ENC28J60_REG_EIE, (1<<ENC28J60_EIE_INTIE)|(1<<ENC28J60_EIE_PKTIE));
+ 153:networkcard/enc28j60.c **** 
+ 154:networkcard/enc28j60.c **** 	//enable rx
+ 155:networkcard/enc28j60.c **** 	//enc28j60_write_address(ENC28J60_REG_ECON1, (1<<ENC28J60_BIT_RXEN));
+ 156:networkcard/enc28j60.c **** 	enc28j60_spi_write_word(ENC28J60_OP_BFS|ENC28J60_REG_ECON1, (1<<ENC28J60_BIT_RXEN));
+ 157:networkcard/enc28j60.c **** 
+ 158:networkcard/enc28j60.c **** 	//set up leds: LEDA: link status, LEDB: RX&TX activity, stretch 40ms, stretch enable
+ 159:networkcard/enc28j60.c **** 	enc28j60_write_phy(ENC28J60_PHY_PHLCON, 0x347A); //cave: Table3-3: reset value is 0x3422, do not m
+ 160:networkcard/enc28j60.c **** 													 //RevA Datasheet page 9: write as '0000', see RevB Datasheet: write 0011!
+ 161:networkcard/enc28j60.c **** 	//read silicon revision
+ 162:networkcard/enc28j60.c **** 	//was geht hier vor?? Trotzdem die Bank 2 ist (0x40), gibt er beim Lesen
+ 163:networkcard/enc28j60.c **** 	//der RevID keine neue Bank aus, trotzdem kommt der Wert 05.
+ 164:networkcard/enc28j60.c **** 	//Vielleicht ist es gar keine Rev05??
+ 165:networkcard/enc28j60.c **** //	enc28j60_revision = enc28j60_read_address(ENC28J60_REG_ECON1);   //um die aktuelle Banknummer zu
+ 166:networkcard/enc28j60.c **** //	enc28j60_revision = enc28j60_read_address(ENC28J60_REG_EREVID);
+ 167:networkcard/enc28j60.c **** }
+ 168:networkcard/enc28j60.c **** 
+ 169:networkcard/enc28j60.c **** void enc28j60_send_packet(unsigned int len, unsigned char *buffer)
+ 170:networkcard/enc28j60.c **** {
+ 171:networkcard/enc28j60.c **** 	unsigned int tmp;
+ 172:networkcard/enc28j60.c **** 	//still sending ?
+ 173:networkcard/enc28j60.c **** 	//wait max 50*10 = 500ms:
+ 174:networkcard/enc28j60.c **** 	for(tmp=0; tmp<50; tmp++){
+ 175:networkcard/enc28j60.c **** 		if (!(enc28j60_read_address(ENC28J60_REG_ECON1) & (1<<ENC28J60_BIT_TXRTS))){
+ 176:networkcard/enc28j60.c **** 			//send finished -> tx packet
+ 177:networkcard/enc28j60.c **** 			break;
+ 178:networkcard/enc28j60.c **** 		}
+ 179:networkcard/enc28j60.c **** 		//tx not finished yet, wait 10ms
+ 180:networkcard/enc28j60.c **** 		_delay_ms(1);
+ 181:networkcard/enc28j60.c **** 	}
+ 182:networkcard/enc28j60.c **** 
+ 183:networkcard/enc28j60.c **** 	//send anyway...
+ 184:networkcard/enc28j60.c **** 
+ 185:networkcard/enc28j60.c **** 	//setup write pointer:
+ 186:networkcard/enc28j60.c **** 	enc28j60_write_address(ENC28J60_REG_EWRPTL, (ENC28J60_TX_BUFFER_START&0xFF));
+ 187:networkcard/enc28j60.c **** 	enc28j60_write_address(ENC28J60_REG_EWRPTH, (ENC28J60_TX_BUFFER_START)>>8);
+ 188:networkcard/enc28j60.c **** 
+ 189:networkcard/enc28j60.c **** 	//set tx end pointer to [start+len]:
+ 190:networkcard/enc28j60.c **** 	enc28j60_write_address(ENC28J60_REG_ETXNDL, (ENC28J60_TX_BUFFER_START+len)&0xFF);
+ 191:networkcard/enc28j60.c **** 	enc28j60_write_address(ENC28J60_REG_ETXNDH, (ENC28J60_TX_BUFFER_START+len)>>8);
+ 192:networkcard/enc28j60.c **** 
+ 193:networkcard/enc28j60.c **** 	//start buffer write command
+ 194:networkcard/enc28j60.c **** 	enc28j60_spi_write_word(ENC28J60_OP_WRITE_BUF_MEM, 0x00);
+ 195:networkcard/enc28j60.c **** 
+ 196:networkcard/enc28j60.c **** 	//copy buffer to enc28j60:
+ 197:networkcard/enc28j60.c **** 	enc28j60_write_buffer(buffer, len);
+ 198:networkcard/enc28j60.c **** 
+ 199:networkcard/enc28j60.c **** 	//bad silicon workaround:
+ 200:networkcard/enc28j60.c **** 	//reset tx logic:
+ 201:networkcard/enc28j60.c **** 	enc28j60_spi_write_word(ENC28J60_OP_BFS | ENC28J60_REG_ECON1, (1<<ENC28J60_BIT_TXRST));
+ 202:networkcard/enc28j60.c **** 	enc28j60_spi_write_word(ENC28J60_OP_BFC | ENC28J60_REG_ECON1, (1<<ENC28J60_BIT_TXRST));
+ 203:networkcard/enc28j60.c **** 
+ 204:networkcard/enc28j60.c **** 	//activate transmission
+ 205:networkcard/enc28j60.c **** 	enc28j60_spi_write_word(ENC28J60_OP_BFS | ENC28J60_REG_ECON1, (1<<ENC28J60_BIT_TXRTS)|(1<<ENC28J60
+ 206:networkcard/enc28j60.c **** }
+ 207:networkcard/enc28j60.c **** 
+ 208:networkcard/enc28j60.c **** unsigned int enc28j60_receive_packet(unsigned int maxlen, unsigned char *buffer)
+ 209:networkcard/enc28j60.c **** {
+ 210:networkcard/enc28j60.c **** 	unsigned int rxstat;
+ 211:networkcard/enc28j60.c **** 	unsigned int len;
+ 212:networkcard/enc28j60.c **** 
+ 213:networkcard/enc28j60.c **** 	//packet in buffer ?
+ 214:networkcard/enc28j60.c **** 	if ((enc28j60_read_address(ENC28J60_REG_EIR) & (1<<ENC28J60_BIT_PKTIF)) == 0){
+ 215:networkcard/enc28j60.c **** 		//double check!
+ 216:networkcard/enc28j60.c **** 		//errata says that PKTIF does not work as it should
+ 217:networkcard/enc28j60.c **** 		//->check packetcount too:
+ 218:networkcard/enc28j60.c **** 		if (enc28j60_read_address(ENC28J60_REG_EPKTCNT) == 0)
+ 219:networkcard/enc28j60.c **** 			return 0;
+ 220:networkcard/enc28j60.c **** 	}
+ 221:networkcard/enc28j60.c **** 
+ 222:networkcard/enc28j60.c **** 	//set read pointer to next packet;
+ 223:networkcard/enc28j60.c **** 	enc28j60_write_address(ENC28J60_REG_ERDPTL, (enc28j60_next_packet_ptr));
+ 224:networkcard/enc28j60.c **** 	enc28j60_write_address(ENC28J60_REG_ERDPTH, (enc28j60_next_packet_ptr)>>8);
+ 225:networkcard/enc28j60.c **** 
+ 226:networkcard/enc28j60.c **** 	//now read the transmit status vector
+ 227:networkcard/enc28j60.c **** 	//read next packet ptr
+ 228:networkcard/enc28j60.c **** 	enc28j60_next_packet_ptr  = enc28j60_spi_read_byte(ENC28J60_OP_READ_BUF_MEM, 0);
+ 229:networkcard/enc28j60.c **** 	enc28j60_next_packet_ptr |= enc28j60_spi_read_byte(ENC28J60_OP_READ_BUF_MEM, 0)<<8;
+ 230:networkcard/enc28j60.c **** 
+ 231:networkcard/enc28j60.c **** 	//read packet length
+ 232:networkcard/enc28j60.c **** 	len  = enc28j60_spi_read_byte(ENC28J60_OP_READ_BUF_MEM, 0);
+ 233:networkcard/enc28j60.c **** 	len |= enc28j60_spi_read_byte(ENC28J60_OP_READ_BUF_MEM, 0)<<8;
+ 234:networkcard/enc28j60.c **** 
+ 235:networkcard/enc28j60.c **** 	//read rx stat
+ 236:networkcard/enc28j60.c **** 	rxstat  = enc28j60_spi_read_byte(ENC28J60_OP_READ_BUF_MEM, 0);
+ 237:networkcard/enc28j60.c **** 	rxstat |= enc28j60_spi_read_byte(ENC28J60_OP_READ_BUF_MEM, 0)<<8;
+ 238:networkcard/enc28j60.c **** 
+ 239:networkcard/enc28j60.c **** 	//limit read bytecount
+ 240:networkcard/enc28j60.c **** 	if (len>maxlen)
+ 241:networkcard/enc28j60.c **** 		len = maxlen;
+ 242:networkcard/enc28j60.c **** 
+ 243:networkcard/enc28j60.c **** 	//transfer packet from enc28j60 to our buffer
+ 244:networkcard/enc28j60.c **** 	enc28j60_read_buffer(buffer,len);
+ 245:networkcard/enc28j60.c **** 
+ 246:networkcard/enc28j60.c **** 	//mark packet as processed (free mem)
+ 247:networkcard/enc28j60.c **** 
+ 248:networkcard/enc28j60.c **** 	//ERRATA says we need to check packet pointer:
+ 249:networkcard/enc28j60.c **** 	if ((enc28j60_next_packet_ptr- 1 < ENC28J60_RX_BUFFER_START) || (enc28j60_next_packet_ptr- 1 > ENC
+ 250:networkcard/enc28j60.c **** 		enc28j60_write_address(ENC28J60_REG_ERXRDPTL, LO8(ENC28J60_RX_BUFFER_END));
+ 251:networkcard/enc28j60.c **** 		enc28j60_write_address(ENC28J60_REG_ERXRDPTH, HI8(ENC28J60_RX_BUFFER_END));
+ 252:networkcard/enc28j60.c **** 	}else{
+ 253:networkcard/enc28j60.c **** 		enc28j60_write_address(ENC28J60_REG_ERXRDPTL, LO8(enc28j60_next_packet_ptr- 1));
+ 254:networkcard/enc28j60.c **** 		enc28j60_write_address(ENC28J60_REG_ERXRDPTH, HI8(enc28j60_next_packet_ptr- 1));
+ 255:networkcard/enc28j60.c **** 	}
+ 256:networkcard/enc28j60.c **** 
+ 257:networkcard/enc28j60.c **** 	//decrement packet counter:
+ 258:networkcard/enc28j60.c **** 	enc28j60_spi_write_word(ENC28J60_OP_BFS|ENC28J60_REG_ECON2, (1<<ENC28J60_BIT_PKTDEC));
+ 259:networkcard/enc28j60.c **** 
+ 260:networkcard/enc28j60.c **** 	return len;
+ 261:networkcard/enc28j60.c **** }
+ 262:networkcard/enc28j60.c **** 
+ 263:networkcard/enc28j60.c **** //read phy register
+ 264:networkcard/enc28j60.c **** unsigned int enc28j60_read_phy(unsigned char address)
+ 265:networkcard/enc28j60.c **** {
+ 266:networkcard/enc28j60.c **** 	unsigned int res;
+ 267:networkcard/enc28j60.c **** 
+ 268:networkcard/enc28j60.c **** 	//see microchip datasheet p.21
+ 269:networkcard/enc28j60.c **** 	//set address to MIREGADR:
+ 270:networkcard/enc28j60.c **** 	enc28j60_write_address(ENC28J60_REG_MIREGADR, address);
+ 271:networkcard/enc28j60.c **** 
+ 272:networkcard/enc28j60.c **** 	//set MICMD.MIIRD bit:
+ 273:networkcard/enc28j60.c **** 	enc28j60_write_address(ENC28J60_REG_MICMD, (1<<ENC28J60_BIT_MIIRD));
+ 274:networkcard/enc28j60.c **** 
+ 275:networkcard/enc28j60.c **** 	//now read op is enabled, wait until PHY read finished:
+ 276:networkcard/enc28j60.c **** 	while(enc28j60_read_address(ENC28J60_REG_MISTAT) & (1<<ENC28J60_BIT_MISTAT_BUSY)){}
+ 277:networkcard/enc28j60.c **** 
+ 278:networkcard/enc28j60.c **** 	//abort read
+ 279:networkcard/enc28j60.c **** 	enc28j60_write_address(ENC28J60_REG_MICMD, 0x00);
+ 280:networkcard/enc28j60.c **** 
+ 281:networkcard/enc28j60.c **** 	//read result
+ 282:networkcard/enc28j60.c **** 	res  = enc28j60_read_address(ENC28J60_REG_MIRDH)<<8;
+ 283:networkcard/enc28j60.c **** 	res |= enc28j60_read_address(ENC28J60_REG_MIRDL);
+ 284:networkcard/enc28j60.c **** 
+ 285:networkcard/enc28j60.c **** 	return res;
+ 286:networkcard/enc28j60.c **** }
+ 287:networkcard/enc28j60.c **** 
+ 288:networkcard/enc28j60.c **** //write phy register
+ 289:networkcard/enc28j60.c **** void enc28j60_write_phy(unsigned char address, unsigned int data)
+ 290:networkcard/enc28j60.c **** {
+ 291:networkcard/enc28j60.c **** 	//see microchip datasheet p.21
+ 292:networkcard/enc28j60.c **** 	//set address to MIREGADR:
+ 293:networkcard/enc28j60.c **** 	enc28j60_write_address(ENC28J60_REG_MIREGADR, address);
+ 294:networkcard/enc28j60.c **** 
+ 295:networkcard/enc28j60.c **** 	//send the data
+ 296:networkcard/enc28j60.c **** 	enc28j60_write_address(ENC28J60_REG_MIWRL, data&0xFF);
+ 297:networkcard/enc28j60.c **** 	enc28j60_write_address(ENC28J60_REG_MIWRH, data>>8  );
+ 298:networkcard/enc28j60.c **** 
+ 299:networkcard/enc28j60.c **** 	//wait until PHY write finished:
+ 300:networkcard/enc28j60.c **** 	while(enc28j60_read_address(ENC28J60_REG_MISTAT) & (1<<ENC28J60_BIT_MISTAT_BUSY)){}
+ 301:networkcard/enc28j60.c **** }
+ 302:networkcard/enc28j60.c **** 
+ 303:networkcard/enc28j60.c **** //read enc28j60 buffer
+ 304:networkcard/enc28j60.c **** void enc28j60_read_buffer(unsigned char *buffer, unsigned int len)
+ 305:networkcard/enc28j60.c **** {
+ 125               	.LM0:
+ 126               	.LFBB1:
+ 127               	/* prologue: function */
+ 128               	/* frame size = 0 */
+ 129               	/* stack size = 0 */
+ 130               	.L__stack_usage = 0
+ 131 0000 FC01      		movw r30,r24
+ 306:networkcard/enc28j60.c **** 	//select enc28j60
+ 307:networkcard/enc28j60.c **** 	ENC28J60_CS_LO();
+ 133               	.LM1:
+ 134 0002 2C98      		cbi 37-32,4
+ 308:networkcard/enc28j60.c **** 
+ 309:networkcard/enc28j60.c **** 	//send read cmd & wait for finish:
+ 310:networkcard/enc28j60.c **** 	SPDR = ENC28J60_OP_READ_BUF_MEM;
+ 136               	.LM2:
+ 137 0004 8AE3      		ldi r24,lo8(58)
+ 138 0006 8EBD      		out 78-32,r24
+ 139               	.L2:
+ 311:networkcard/enc28j60.c **** 	while(!(SPSR & (1<<SPIF)));
+ 141               	.LM3:
+ 142 0008 0DB4      		in __tmp_reg__,77-32
+ 143 000a 07FE      		sbrs __tmp_reg__,7
+ 144 000c 00C0      		rjmp .L2
+ 145 000e 00C0      		rjmp .L8
+ 146               	.L5:
+ 312:networkcard/enc28j60.c **** 
+ 313:networkcard/enc28j60.c **** 	//read data & store in buffer:
+ 314:networkcard/enc28j60.c **** 	while(len--){
+ 315:networkcard/enc28j60.c **** 		//send dummy byte & read data
+ 316:networkcard/enc28j60.c **** 		SPDR = 0x00;
+ 148               	.LM4:
+ 149 0010 1EBC      		out 78-32,__zero_reg__
+ 150               	.L4:
+ 317:networkcard/enc28j60.c **** 		while(!(SPSR & (1<<SPIF)));
+ 152               	.LM5:
+ 153 0012 0DB4      		in __tmp_reg__,77-32
+ 154 0014 07FE      		sbrs __tmp_reg__,7
+ 155 0016 00C0      		rjmp .L4
+ 318:networkcard/enc28j60.c **** 		*buffer++ = SPDR;
+ 157               	.LM6:
+ 158 0018 8EB5      		in r24,78-32
+ 159 001a 8193      		st Z+,r24
+ 160 001c 6150      		subi r22,lo8(-(-1))
+ 161 001e 7040      		sbci r23,hi8(-(-1))
+ 162               	.L8:
+ 314:networkcard/enc28j60.c **** 	while(len--){
+ 164               	.LM7:
+ 165 0020 6115      		cp r22,__zero_reg__
+ 166 0022 7105      		cpc r23,__zero_reg__
+ 167 0024 01F4      		brne .L5
+ 319:networkcard/enc28j60.c **** 	}
+ 320:networkcard/enc28j60.c **** 
+ 321:networkcard/enc28j60.c **** 	//deselect enc28j60
+ 322:networkcard/enc28j60.c **** 	ENC28J60_CS_HI();
+ 169               	.LM8:
+ 170 0026 2C9A      		sbi 37-32,4
+ 171               	/* epilogue start */
+ 323:networkcard/enc28j60.c **** }
+ 173               	.LM9:
+ 174 0028 0895      		ret
+ 176               	.Lscope1:
+ 178               		.stabd	78,0,0
+ 179               		.section	.text.enc28j60_write_buffer,"ax",@progbits
+ 183               	.global	enc28j60_write_buffer
+ 185               	enc28j60_write_buffer:
+ 186               		.stabd	46,0,0
+ 324:networkcard/enc28j60.c **** 
+ 325:networkcard/enc28j60.c **** //write enc28j60 buffer
+ 326:networkcard/enc28j60.c **** void enc28j60_write_buffer(unsigned char *buffer, unsigned int len)
+ 327:networkcard/enc28j60.c **** {
+ 188               	.LM10:
+ 189               	.LFBB2:
+ 190               	/* prologue: function */
+ 191               	/* frame size = 0 */
+ 192               	/* stack size = 0 */
+ 193               	.L__stack_usage = 0
+ 194 0000 FC01      		movw r30,r24
+ 328:networkcard/enc28j60.c **** 	//select enc28j60
+ 329:networkcard/enc28j60.c **** 	ENC28J60_CS_LO();
+ 196               	.LM11:
+ 197 0002 2C98      		cbi 37-32,4
+ 330:networkcard/enc28j60.c **** 
+ 331:networkcard/enc28j60.c **** 	//send write cmd & wait for finish:
+ 332:networkcard/enc28j60.c **** 	SPDR = ENC28J60_OP_WRITE_BUF_MEM;
+ 199               	.LM12:
+ 200 0004 8AE7      		ldi r24,lo8(122)
+ 201 0006 8EBD      		out 78-32,r24
+ 202               	.L10:
+ 333:networkcard/enc28j60.c **** 	while(!(SPSR & (1<<SPIF)));
+ 204               	.LM13:
+ 205 0008 0DB4      		in __tmp_reg__,77-32
+ 206 000a 07FE      		sbrs __tmp_reg__,7
+ 207 000c 00C0      		rjmp .L10
+ 208               	.L13:
+ 334:networkcard/enc28j60.c **** 
+ 335:networkcard/enc28j60.c **** 	do{
+ 336:networkcard/enc28j60.c **** 		//send data
+ 337:networkcard/enc28j60.c **** 		SPDR = *buffer++;
+ 210               	.LM14:
+ 211 000e 8191      		ld r24,Z+
+ 212 0010 8EBD      		out 78-32,r24
+ 338:networkcard/enc28j60.c **** 		len--;
+ 214               	.LM15:
+ 215 0012 6150      		subi r22,lo8(-(-1))
+ 216 0014 7040      		sbci r23,hi8(-(-1))
+ 217               	.L11:
+ 339:networkcard/enc28j60.c **** 		while(!(SPSR & (1<<SPIF)));
+ 219               	.LM16:
+ 220 0016 0DB4      		in __tmp_reg__,77-32
+ 221 0018 07FE      		sbrs __tmp_reg__,7
+ 222 001a 00C0      		rjmp .L11
+ 340:networkcard/enc28j60.c **** 	}while(len);
+ 224               	.LM17:
+ 225 001c 6115      		cp r22,__zero_reg__
+ 226 001e 7105      		cpc r23,__zero_reg__
+ 227 0020 01F4      		brne .L13
+ 341:networkcard/enc28j60.c **** 
+ 342:networkcard/enc28j60.c **** 
+ 343:networkcard/enc28j60.c **** 	//deselect enc28j60
+ 344:networkcard/enc28j60.c **** 	ENC28J60_CS_HI();
+ 229               	.LM18:
+ 230 0022 2C9A      		sbi 37-32,4
+ 231               	/* epilogue start */
+ 345:networkcard/enc28j60.c **** }
+ 233               	.LM19:
+ 234 0024 0895      		ret
+ 236               	.Lscope2:
+ 238               		.stabd	78,0,0
+ 239               		.section	.text.enc28j60_spi_read_byte,"ax",@progbits
+ 243               	.global	enc28j60_spi_read_byte
+ 245               	enc28j60_spi_read_byte:
+ 246               		.stabd	46,0,0
+ 346:networkcard/enc28j60.c **** 
+ 347:networkcard/enc28j60.c **** //read address
+ 348:networkcard/enc28j60.c **** unsigned char enc28j60_read_address(unsigned char address)
+ 349:networkcard/enc28j60.c **** {
+ 350:networkcard/enc28j60.c **** 	//hier Vereinfachung, da die Register 1b..1f in allen Bänken erreichbar sind, braucht die Bank nic
+ 351:networkcard/enc28j60.c **** 	//do it easy: for registers 1b..1f it is not necessary to change bank as they are available in all
+ 352:networkcard/enc28j60.c **** 	register unsigned char enc28j60_new_bank=address & 0x60;
+ 353:networkcard/enc28j60.c **** 	if(((address&0x1f)<0x1b) && (enc28j60_new_bank != enc28j60_current_bank)){ //Regs 0x1b..0x1f appea
+ 354:networkcard/enc28j60.c **** 		enc28j60_current_bank = enc28j60_new_bank;
+ 355:networkcard/enc28j60.c **** 
+ 356:networkcard/enc28j60.c **** 		//clear bank sel bits:  //BF 03
+ 357:networkcard/enc28j60.c **** 		enc28j60_spi_write_word((ENC28J60_OP_BFC | ENC28J60_REG_ECON1),3<<ENC28J60_BIT_ECON1_BSEL0);
+ 358:networkcard/enc28j60.c **** 		//setup bank selection bits: //e.g. 9F 00  for Bank 0
+ 359:networkcard/enc28j60.c **** 		enc28j60_spi_write_word((ENC28J60_OP_BFS | ENC28J60_REG_ECON1),enc28j60_new_bank>>5);
+ 360:networkcard/enc28j60.c **** 	}
+ 361:networkcard/enc28j60.c **** 	//and read the data:
+ 362:networkcard/enc28j60.c **** 	return enc28j60_spi_read_byte(ENC28J60_OP_READ_CTRL_REG, address);
+ 363:networkcard/enc28j60.c **** }
+ 364:networkcard/enc28j60.c **** 
+ 365:networkcard/enc28j60.c **** //write address
+ 366:networkcard/enc28j60.c **** void enc28j60_write_address(unsigned char address, unsigned char data)
+ 367:networkcard/enc28j60.c **** {
+ 368:networkcard/enc28j60.c **** 	//select bank:
+ 369:networkcard/enc28j60.c **** 	register unsigned char enc28j60_new_bank=address & 0x60,addr_masked=address&0x1f;
+ 370:networkcard/enc28j60.c **** 	if((addr_masked < 0x1b) && (enc28j60_new_bank != enc28j60_current_bank)){ //Registers 0x1b..0x1f a
+ 371:networkcard/enc28j60.c **** 		enc28j60_current_bank = enc28j60_new_bank;
+ 372:networkcard/enc28j60.c **** 
+ 373:networkcard/enc28j60.c **** 		//clear bank sel bits:  //BF 03
+ 374:networkcard/enc28j60.c **** 		enc28j60_spi_write_word((ENC28J60_OP_BFC | ENC28J60_REG_ECON1),((1<<ENC28J60_BIT_ECON1_BSEL0) | (
+ 375:networkcard/enc28j60.c **** 		//setup bank selection bits: //e.g. 9F 00  for Bank 0
+ 376:networkcard/enc28j60.c **** 		enc28j60_spi_write_word((ENC28J60_OP_BFS | ENC28J60_REG_ECON1),enc28j60_new_bank>>5);
+ 377:networkcard/enc28j60.c **** 	}
+ 378:networkcard/enc28j60.c **** 	//and write data
+ 379:networkcard/enc28j60.c **** 	enc28j60_spi_write_word((ENC28J60_OP_WRITE_CTRL_REG | addr_masked), data);
+ 380:networkcard/enc28j60.c **** }
+ 381:networkcard/enc28j60.c **** 
+ 382:networkcard/enc28j60.c **** 
+ 383:networkcard/enc28j60.c **** //read a byte (adds a extra dummy read if (address&0x80)
+ 384:networkcard/enc28j60.c **** unsigned char enc28j60_spi_read_byte(unsigned char op, unsigned char address)
+ 385:networkcard/enc28j60.c **** {
+ 248               	.LM20:
+ 249               	.LFBB3:
+ 250               	/* prologue: function */
+ 251               	/* frame size = 0 */
+ 252               	/* stack size = 0 */
+ 253               	.L__stack_usage = 0
+ 386:networkcard/enc28j60.c **** 	unsigned char res;
+ 387:networkcard/enc28j60.c **** 
+ 388:networkcard/enc28j60.c **** 	ENC28J60_CS_LO(); //select enc28j60
+ 255               	.LM21:
+ 256 0000 2C98      		cbi 37-32,4
+ 389:networkcard/enc28j60.c **** 
+ 390:networkcard/enc28j60.c **** 	SPDR = op | (address & 0x1F); //start read cmd
+ 258               	.LM22:
+ 259 0002 962F      		mov r25,r22
+ 260 0004 9F71      		andi r25,lo8(31)
+ 261 0006 982B      		or r25,r24
+ 262 0008 9EBD      		out 78-32,r25
+ 263               	.L18:
+ 391:networkcard/enc28j60.c **** 
+ 392:networkcard/enc28j60.c **** 	while(!(SPSR & (1<<SPIF))); //wait for completion
+ 265               	.LM23:
+ 266 000a 0DB4      		in __tmp_reg__,77-32
+ 267 000c 07FE      		sbrs __tmp_reg__,7
+ 268 000e 00C0      		rjmp .L18
+ 393:networkcard/enc28j60.c **** 
+ 394:networkcard/enc28j60.c **** 	SPDR = 0x00; //send dummy data (read)
+ 270               	.LM24:
+ 271 0010 1EBC      		out 78-32,__zero_reg__
+ 272               	.L19:
+ 395:networkcard/enc28j60.c **** 
+ 396:networkcard/enc28j60.c **** 	while(!(SPSR & (1<<SPIF))); //wait for completion
+ 274               	.LM25:
+ 275 0012 0DB4      		in __tmp_reg__,77-32
+ 276 0014 07FE      		sbrs __tmp_reg__,7
+ 277 0016 00C0      		rjmp .L19
+ 397:networkcard/enc28j60.c **** 
+ 398:networkcard/enc28j60.c **** 	//if we read MAC* or MI* registers we need to add an dummy read here !
+ 399:networkcard/enc28j60.c **** 	if(address & 0x80){  //use bit7 of address for this
+ 279               	.LM26:
+ 280 0018 67FF      		sbrs r22,7
+ 281 001a 00C0      		rjmp .L20
+ 400:networkcard/enc28j60.c **** 		SPDR = 0x00;
+ 283               	.LM27:
+ 284 001c 1EBC      		out 78-32,__zero_reg__
+ 285               	.L21:
+ 401:networkcard/enc28j60.c **** 		while(!((SPSR) & (1<<SPIF)));
+ 287               	.LM28:
+ 288 001e 0DB4      		in __tmp_reg__,77-32
+ 289 0020 07FE      		sbrs __tmp_reg__,7
+ 290 0022 00C0      		rjmp .L21
+ 291               	.L20:
+ 402:networkcard/enc28j60.c **** 	}
+ 403:networkcard/enc28j60.c **** 
+ 404:networkcard/enc28j60.c **** 	res = SPDR; //read data
+ 293               	.LM29:
+ 294 0024 8EB5      		in r24,78-32
+ 405:networkcard/enc28j60.c **** 
+ 406:networkcard/enc28j60.c **** 	ENC28J60_CS_HI();//deselect enc28j60
+ 296               	.LM30:
+ 297 0026 2C9A      		sbi 37-32,4
+ 298               	/* epilogue start */
+ 407:networkcard/enc28j60.c **** 
+ 408:networkcard/enc28j60.c **** 	return res;
+ 409:networkcard/enc28j60.c **** }
+ 300               	.LM31:
+ 301 0028 0895      		ret
+ 306               	.Lscope3:
+ 308               		.stabd	78,0,0
+ 309               		.section	.text.enc28j60_spi_write_word,"ax",@progbits
+ 313               	.global	enc28j60_spi_write_word
+ 315               	enc28j60_spi_write_word:
+ 316               		.stabd	46,0,0
+ 410:networkcard/enc28j60.c **** 
+ 411:networkcard/enc28j60.c **** //spi write word
+ 412:networkcard/enc28j60.c **** void enc28j60_spi_write_word(unsigned char hi, unsigned char lo)
+ 413:networkcard/enc28j60.c **** {
+ 318               	.LM32:
+ 319               	.LFBB4:
+ 320               	/* prologue: function */
+ 321               	/* frame size = 0 */
+ 322               	/* stack size = 0 */
+ 323               	.L__stack_usage = 0
+ 414:networkcard/enc28j60.c **** 
+ 415:networkcard/enc28j60.c **** 	ENC28J60_CS_LO(); //select enc28j60
+ 325               	.LM33:
+ 326 0000 2C98      		cbi 37-32,4
+ 416:networkcard/enc28j60.c **** 	SPDR = hi; //shift hi data out
+ 328               	.LM34:
+ 329 0002 8EBD      		out 78-32,r24
+ 330               	.L26:
+ 417:networkcard/enc28j60.c **** 	while(!(SPSR & (1<<SPIF))); //wait for completion
+ 332               	.LM35:
+ 333 0004 0DB4      		in __tmp_reg__,77-32
+ 334 0006 07FE      		sbrs __tmp_reg__,7
+ 335 0008 00C0      		rjmp .L26
+ 418:networkcard/enc28j60.c **** 
+ 419:networkcard/enc28j60.c **** 	SPDR = lo; //shift lo data out
+ 337               	.LM36:
+ 338 000a 6EBD      		out 78-32,r22
+ 339               	.L27:
+ 420:networkcard/enc28j60.c **** 	while(!(SPSR & (1<<SPIF))); //wait for completion
+ 341               	.LM37:
+ 342 000c 0DB4      		in __tmp_reg__,77-32
+ 343 000e 07FE      		sbrs __tmp_reg__,7
+ 344 0010 00C0      		rjmp .L27
+ 421:networkcard/enc28j60.c **** 
+ 422:networkcard/enc28j60.c **** 	ENC28J60_CS_HI(); //deselect enc28j60
+ 346               	.LM38:
+ 347 0012 2C9A      		sbi 37-32,4
+ 348               	/* epilogue start */
+ 423:networkcard/enc28j60.c **** }
+ 350               	.LM39:
+ 351 0014 0895      		ret
+ 353               	.Lscope4:
+ 355               		.stabd	78,0,0
+ 356               		.section	.text.enc28j60_write_address,"ax",@progbits
+ 360               	.global	enc28j60_write_address
+ 362               	enc28j60_write_address:
+ 363               		.stabd	46,0,0
+ 367:networkcard/enc28j60.c **** {
+ 365               	.LM40:
+ 366               	.LFBB5:
+ 367 0000 FF92      		push r15
+ 368 0002 0F93      		push r16
+ 369 0004 1F93      		push r17
+ 370               	/* prologue: function */
+ 371               	/* frame size = 0 */
+ 372               	/* stack size = 3 */
+ 373               	.L__stack_usage = 3
+ 374 0006 F62E      		mov r15,r22
+ 369:networkcard/enc28j60.c **** 	register unsigned char enc28j60_new_bank=address & 0x60,addr_masked=address&0x1f;
+ 376               	.LM41:
+ 377 0008 082F      		mov r16,r24
+ 378 000a 0F71      		andi r16,lo8(31)
+ 370:networkcard/enc28j60.c **** 	if((addr_masked < 0x1b) && (enc28j60_new_bank != enc28j60_current_bank)){ //Registers 0x1b..0x1f a
+ 380               	.LM42:
+ 381 000c 0B31      		cpi r16,lo8(27)
+ 382 000e 00F4      		brsh .L31
+ 369:networkcard/enc28j60.c **** 	register unsigned char enc28j60_new_bank=address & 0x60,addr_masked=address&0x1f;
+ 384               	.LM43:
+ 385 0010 182F      		mov r17,r24
+ 386 0012 1076      		andi r17,lo8(96)
+ 370:networkcard/enc28j60.c **** 	if((addr_masked < 0x1b) && (enc28j60_new_bank != enc28j60_current_bank)){ //Registers 0x1b..0x1f a
+ 388               	.LM44:
+ 389 0014 8091 0000 		lds r24,enc28j60_current_bank
+ 390 0018 1817      		cp r17,r24
+ 391 001a 01F0      		breq .L31
+ 371:networkcard/enc28j60.c **** 		enc28j60_current_bank = enc28j60_new_bank;
+ 393               	.LM45:
+ 394 001c 1093 0000 		sts enc28j60_current_bank,r17
+ 374:networkcard/enc28j60.c **** 		enc28j60_spi_write_word((ENC28J60_OP_BFC | ENC28J60_REG_ECON1),((1<<ENC28J60_BIT_ECON1_BSEL0) | (
+ 396               	.LM46:
+ 397 0020 8FEB      		ldi r24,lo8(-65)
+ 398 0022 63E0      		ldi r22,lo8(3)
+ 399 0024 0E94 0000 		call enc28j60_spi_write_word
+ 376:networkcard/enc28j60.c **** 		enc28j60_spi_write_word((ENC28J60_OP_BFS | ENC28J60_REG_ECON1),enc28j60_new_bank>>5);
+ 401               	.LM47:
+ 402 0028 612F      		mov r22,r17
+ 403 002a 6295      		swap r22
+ 404 002c 6695      		lsr r22
+ 405 002e 6770      		andi r22,lo8(7)
+ 406 0030 8FE9      		ldi r24,lo8(-97)
+ 407 0032 0E94 0000 		call enc28j60_spi_write_word
+ 408               	.L31:
+ 379:networkcard/enc28j60.c **** 	enc28j60_spi_write_word((ENC28J60_OP_WRITE_CTRL_REG | addr_masked), data);
+ 410               	.LM48:
+ 411 0036 802F      		mov r24,r16
+ 412 0038 8064      		ori r24,lo8(64)
+ 413 003a 6F2D      		mov r22,r15
+ 414 003c 0E94 0000 		call enc28j60_spi_write_word
+ 415               	/* epilogue start */
+ 380:networkcard/enc28j60.c **** }
+ 417               	.LM49:
+ 418 0040 1F91      		pop r17
+ 419 0042 0F91      		pop r16
+ 420 0044 FF90      		pop r15
+ 421 0046 0895      		ret
+ 427               	.Lscope5:
+ 429               		.stabd	78,0,0
+ 430               		.section	.text.enc28j60_read_address,"ax",@progbits
+ 433               	.global	enc28j60_read_address
+ 435               	enc28j60_read_address:
+ 436               		.stabd	46,0,0
+ 349:networkcard/enc28j60.c **** {
+ 438               	.LM50:
+ 439               	.LFBB6:
+ 440 0000 0F93      		push r16
+ 441 0002 1F93      		push r17
+ 442               	/* prologue: function */
+ 443               	/* frame size = 0 */
+ 444               	/* stack size = 2 */
+ 445               	.L__stack_usage = 2
+ 446 0004 182F      		mov r17,r24
+ 353:networkcard/enc28j60.c **** 	if(((address&0x1f)<0x1b) && (enc28j60_new_bank != enc28j60_current_bank)){ //Regs 0x1b..0x1f appea
+ 448               	.LM51:
+ 449 0006 282F      		mov r18,r24
+ 450 0008 30E0      		ldi r19,lo8(0)
+ 451 000a 2F71      		andi r18,lo8(31)
+ 452 000c 3070      		andi r19,hi8(31)
+ 453 000e 2B31      		cpi r18,27
+ 454 0010 3105      		cpc r19,__zero_reg__
+ 455 0012 04F4      		brge .L33
+ 352:networkcard/enc28j60.c **** 	register unsigned char enc28j60_new_bank=address & 0x60;
+ 457               	.LM52:
+ 458 0014 082F      		mov r16,r24
+ 459 0016 0076      		andi r16,lo8(96)
+ 353:networkcard/enc28j60.c **** 	if(((address&0x1f)<0x1b) && (enc28j60_new_bank != enc28j60_current_bank)){ //Regs 0x1b..0x1f appea
+ 461               	.LM53:
+ 462 0018 8091 0000 		lds r24,enc28j60_current_bank
+ 463 001c 0817      		cp r16,r24
+ 464 001e 01F0      		breq .L33
+ 354:networkcard/enc28j60.c **** 		enc28j60_current_bank = enc28j60_new_bank;
+ 466               	.LM54:
+ 467 0020 0093 0000 		sts enc28j60_current_bank,r16
+ 357:networkcard/enc28j60.c **** 		enc28j60_spi_write_word((ENC28J60_OP_BFC | ENC28J60_REG_ECON1),3<<ENC28J60_BIT_ECON1_BSEL0);
+ 469               	.LM55:
+ 470 0024 8FEB      		ldi r24,lo8(-65)
+ 471 0026 63E0      		ldi r22,lo8(3)
+ 472 0028 0E94 0000 		call enc28j60_spi_write_word
+ 359:networkcard/enc28j60.c **** 		enc28j60_spi_write_word((ENC28J60_OP_BFS | ENC28J60_REG_ECON1),enc28j60_new_bank>>5);
+ 474               	.LM56:
+ 475 002c 602F      		mov r22,r16
+ 476 002e 6295      		swap r22
+ 477 0030 6695      		lsr r22
+ 478 0032 6770      		andi r22,lo8(7)
+ 479 0034 8FE9      		ldi r24,lo8(-97)
+ 480 0036 0E94 0000 		call enc28j60_spi_write_word
+ 481               	.L33:
+ 362:networkcard/enc28j60.c **** 	return enc28j60_spi_read_byte(ENC28J60_OP_READ_CTRL_REG, address);
+ 483               	.LM57:
+ 484 003a 80E0      		ldi r24,lo8(0)
+ 485 003c 612F      		mov r22,r17
+ 486 003e 0E94 0000 		call enc28j60_spi_read_byte
+ 487               	/* epilogue start */
+ 363:networkcard/enc28j60.c **** }
+ 489               	.LM58:
+ 490 0042 1F91      		pop r17
+ 491 0044 0F91      		pop r16
+ 492 0046 0895      		ret
+ 497               	.Lscope6:
+ 499               		.stabd	78,0,0
+ 500               		.section	.text.enc28j60_write_phy,"ax",@progbits
+ 503               	.global	enc28j60_write_phy
+ 505               	enc28j60_write_phy:
+ 506               		.stabd	46,0,0
+ 290:networkcard/enc28j60.c **** {
+ 508               	.LM59:
+ 509               	.LFBB7:
+ 510 0000 1F93      		push r17
+ 511 0002 DF93      		push r29
+ 512 0004 CF93      		push r28
+ 513 0006 0F92      		push __tmp_reg__
+ 514 0008 CDB7      		in r28,__SP_L__
+ 515 000a DEB7      		in r29,__SP_H__
+ 516               	/* prologue: function */
+ 517               	/* frame size = 1 */
+ 518               	/* stack size = 4 */
+ 519               	.L__stack_usage = 4
+ 520 000c 982F      		mov r25,r24
+ 521 000e 162F      		mov r17,r22
+ 293:networkcard/enc28j60.c **** 	enc28j60_write_address(ENC28J60_REG_MIREGADR, address);
+ 523               	.LM60:
+ 524 0010 84ED      		ldi r24,lo8(-44)
+ 525 0012 692F      		mov r22,r25
+ 526 0014 7983      		std Y+1,r23
+ 527 0016 0E94 0000 		call enc28j60_write_address
+ 296:networkcard/enc28j60.c **** 	enc28j60_write_address(ENC28J60_REG_MIWRL, data&0xFF);
+ 529               	.LM61:
+ 530 001a 86ED      		ldi r24,lo8(-42)
+ 531 001c 612F      		mov r22,r17
+ 532 001e 0E94 0000 		call enc28j60_write_address
+ 297:networkcard/enc28j60.c **** 	enc28j60_write_address(ENC28J60_REG_MIWRH, data>>8  );
+ 534               	.LM62:
+ 535 0022 87ED      		ldi r24,lo8(-41)
+ 536 0024 7981      		ldd r23,Y+1
+ 537 0026 672F      		mov r22,r23
+ 538 0028 0E94 0000 		call enc28j60_write_address
+ 539               	.L35:
+ 300:networkcard/enc28j60.c **** 	while(enc28j60_read_address(ENC28J60_REG_MISTAT) & (1<<ENC28J60_BIT_MISTAT_BUSY)){}
+ 541               	.LM63:
+ 542 002c 8AEE      		ldi r24,lo8(-22)
+ 543 002e 0E94 0000 		call enc28j60_read_address
+ 544 0032 80FD      		sbrc r24,0
+ 545 0034 00C0      		rjmp .L35
+ 546               	/* epilogue start */
+ 301:networkcard/enc28j60.c **** }
+ 548               	.LM64:
+ 549 0036 0F90      		pop __tmp_reg__
+ 550 0038 CF91      		pop r28
+ 551 003a DF91      		pop r29
+ 552 003c 1F91      		pop r17
+ 553 003e 0895      		ret
+ 555               	.Lscope7:
+ 557               		.stabd	78,0,0
+ 558               		.section	.text.enc28j60_read_phy,"ax",@progbits
+ 561               	.global	enc28j60_read_phy
+ 563               	enc28j60_read_phy:
+ 564               		.stabd	46,0,0
+ 265:networkcard/enc28j60.c **** {
+ 566               	.LM65:
+ 567               	.LFBB8:
+ 568 0000 EF92      		push r14
+ 569 0002 FF92      		push r15
+ 570 0004 CF93      		push r28
+ 571 0006 DF93      		push r29
+ 572               	/* prologue: function */
+ 573               	/* frame size = 0 */
+ 574               	/* stack size = 4 */
+ 575               	.L__stack_usage = 4
+ 576 0008 682F      		mov r22,r24
+ 270:networkcard/enc28j60.c **** 	enc28j60_write_address(ENC28J60_REG_MIREGADR, address);
+ 578               	.LM66:
+ 579 000a 84ED      		ldi r24,lo8(-44)
+ 580 000c 0E94 0000 		call enc28j60_write_address
+ 273:networkcard/enc28j60.c **** 	enc28j60_write_address(ENC28J60_REG_MICMD, (1<<ENC28J60_BIT_MIIRD));
+ 582               	.LM67:
+ 583 0010 82ED      		ldi r24,lo8(-46)
+ 584 0012 61E0      		ldi r22,lo8(1)
+ 585 0014 0E94 0000 		call enc28j60_write_address
+ 586               	.L38:
+ 276:networkcard/enc28j60.c **** 	while(enc28j60_read_address(ENC28J60_REG_MISTAT) & (1<<ENC28J60_BIT_MISTAT_BUSY)){}
+ 588               	.LM68:
+ 589 0018 8AEE      		ldi r24,lo8(-22)
+ 590 001a 0E94 0000 		call enc28j60_read_address
+ 591 001e 80FD      		sbrc r24,0
+ 592 0020 00C0      		rjmp .L38
+ 279:networkcard/enc28j60.c **** 	enc28j60_write_address(ENC28J60_REG_MICMD, 0x00);
+ 594               	.LM69:
+ 595 0022 82ED      		ldi r24,lo8(-46)
+ 596 0024 60E0      		ldi r22,lo8(0)
+ 597 0026 0E94 0000 		call enc28j60_write_address
+ 282:networkcard/enc28j60.c **** 	res  = enc28j60_read_address(ENC28J60_REG_MIRDH)<<8;
+ 599               	.LM70:
+ 600 002a 89ED      		ldi r24,lo8(-39)
+ 601 002c 0E94 0000 		call enc28j60_read_address
+ 602 0030 982F      		mov r25,r24
+ 603 0032 80E0      		ldi r24,lo8(0)
+ 604 0034 EC01      		movw r28,r24
+ 283:networkcard/enc28j60.c **** 	res |= enc28j60_read_address(ENC28J60_REG_MIRDL);
+ 606               	.LM71:
+ 607 0036 88ED      		ldi r24,lo8(-40)
+ 608 0038 0E94 0000 		call enc28j60_read_address
+ 609 003c 282F      		mov r18,r24
+ 610 003e 30E0      		ldi r19,lo8(0)
+ 611 0040 2C2B      		or r18,r28
+ 612 0042 3D2B      		or r19,r29
+ 286:networkcard/enc28j60.c **** }
+ 614               	.LM72:
+ 615 0044 C901      		movw r24,r18
+ 616               	/* epilogue start */
+ 617 0046 DF91      		pop r29
+ 618 0048 CF91      		pop r28
+ 619 004a FF90      		pop r15
+ 620 004c EF90      		pop r14
+ 621 004e 0895      		ret
+ 623               	.Lscope8:
+ 625               		.stabd	78,0,0
+ 626               		.section	.text.enc28j60_receive_packet,"ax",@progbits
+ 630               	.global	enc28j60_receive_packet
+ 632               	enc28j60_receive_packet:
+ 633               		.stabd	46,0,0
+ 209:networkcard/enc28j60.c **** {
+ 635               	.LM73:
+ 636               	.LFBB9:
+ 637 0000 EF92      		push r14
+ 638 0002 FF92      		push r15
+ 639 0004 0F93      		push r16
+ 640 0006 1F93      		push r17
+ 641 0008 CF93      		push r28
+ 642 000a DF93      		push r29
+ 643               	/* prologue: function */
+ 644               	/* frame size = 0 */
+ 645               	/* stack size = 6 */
+ 646               	.L__stack_usage = 6
+ 647 000c 8C01      		movw r16,r24
+ 648 000e 7B01      		movw r14,r22
+ 214:networkcard/enc28j60.c **** 	if ((enc28j60_read_address(ENC28J60_REG_EIR) & (1<<ENC28J60_BIT_PKTIF)) == 0){
+ 650               	.LM74:
+ 651 0010 8CE1      		ldi r24,lo8(28)
+ 652 0012 0E94 0000 		call enc28j60_read_address
+ 653 0016 86FD      		sbrc r24,6
+ 654 0018 00C0      		rjmp .L41
+ 218:networkcard/enc28j60.c **** 		if (enc28j60_read_address(ENC28J60_REG_EPKTCNT) == 0)
+ 656               	.LM75:
+ 657 001a 89E3      		ldi r24,lo8(57)
+ 658 001c 0E94 0000 		call enc28j60_read_address
+ 659 0020 8823      		tst r24
+ 660 0022 01F4      		brne .+2
+ 661 0024 00C0      		rjmp .L46
+ 662               	.L41:
+ 223:networkcard/enc28j60.c **** 	enc28j60_write_address(ENC28J60_REG_ERDPTL, (enc28j60_next_packet_ptr));
+ 664               	.LM76:
+ 665 0026 80E0      		ldi r24,lo8(0)
+ 666 0028 6091 0000 		lds r22,enc28j60_next_packet_ptr
+ 667 002c 0E94 0000 		call enc28j60_write_address
+ 224:networkcard/enc28j60.c **** 	enc28j60_write_address(ENC28J60_REG_ERDPTH, (enc28j60_next_packet_ptr)>>8);
+ 669               	.LM77:
+ 670 0030 6091 0000 		lds r22,enc28j60_next_packet_ptr+1
+ 671 0034 81E0      		ldi r24,lo8(1)
+ 672 0036 0E94 0000 		call enc28j60_write_address
+ 228:networkcard/enc28j60.c **** 	enc28j60_next_packet_ptr  = enc28j60_spi_read_byte(ENC28J60_OP_READ_BUF_MEM, 0);
+ 674               	.LM78:
+ 675 003a 8AE3      		ldi r24,lo8(58)
+ 676 003c 60E0      		ldi r22,lo8(0)
+ 677 003e 0E94 0000 		call enc28j60_spi_read_byte
+ 678 0042 C82F      		mov r28,r24
+ 679 0044 D0E0      		ldi r29,lo8(0)
+ 680 0046 D093 0000 		sts enc28j60_next_packet_ptr+1,r29
+ 681 004a C093 0000 		sts enc28j60_next_packet_ptr,r28
+ 229:networkcard/enc28j60.c **** 	enc28j60_next_packet_ptr |= enc28j60_spi_read_byte(ENC28J60_OP_READ_BUF_MEM, 0)<<8;
+ 683               	.LM79:
+ 684 004e 8AE3      		ldi r24,lo8(58)
+ 685 0050 60E0      		ldi r22,lo8(0)
+ 686 0052 0E94 0000 		call enc28j60_spi_read_byte
+ 687 0056 382F      		mov r19,r24
+ 688 0058 20E0      		ldi r18,lo8(0)
+ 689 005a C22B      		or r28,r18
+ 690 005c D32B      		or r29,r19
+ 691 005e D093 0000 		sts enc28j60_next_packet_ptr+1,r29
+ 692 0062 C093 0000 		sts enc28j60_next_packet_ptr,r28
+ 232:networkcard/enc28j60.c **** 	len  = enc28j60_spi_read_byte(ENC28J60_OP_READ_BUF_MEM, 0);
+ 694               	.LM80:
+ 695 0066 8AE3      		ldi r24,lo8(58)
+ 696 0068 60E0      		ldi r22,lo8(0)
+ 697 006a 0E94 0000 		call enc28j60_spi_read_byte
+ 698 006e C82F      		mov r28,r24
+ 699 0070 D0E0      		ldi r29,lo8(0)
+ 233:networkcard/enc28j60.c **** 	len |= enc28j60_spi_read_byte(ENC28J60_OP_READ_BUF_MEM, 0)<<8;
+ 701               	.LM81:
+ 702 0072 8AE3      		ldi r24,lo8(58)
+ 703 0074 60E0      		ldi r22,lo8(0)
+ 704 0076 0E94 0000 		call enc28j60_spi_read_byte
+ 705 007a 382F      		mov r19,r24
+ 706 007c 20E0      		ldi r18,lo8(0)
+ 707 007e C22B      		or r28,r18
+ 708 0080 D32B      		or r29,r19
+ 236:networkcard/enc28j60.c **** 	rxstat  = enc28j60_spi_read_byte(ENC28J60_OP_READ_BUF_MEM, 0);
+ 710               	.LM82:
+ 711 0082 8AE3      		ldi r24,lo8(58)
+ 712 0084 60E0      		ldi r22,lo8(0)
+ 713 0086 0E94 0000 		call enc28j60_spi_read_byte
+ 237:networkcard/enc28j60.c **** 	rxstat |= enc28j60_spi_read_byte(ENC28J60_OP_READ_BUF_MEM, 0)<<8;
+ 715               	.LM83:
+ 716 008a 8AE3      		ldi r24,lo8(58)
+ 717 008c 60E0      		ldi r22,lo8(0)
+ 718 008e 0E94 0000 		call enc28j60_spi_read_byte
+ 719 0092 0C17      		cp r16,r28
+ 720 0094 1D07      		cpc r17,r29
+ 721 0096 00F4      		brsh .L43
+ 722 0098 E801      		movw r28,r16
+ 723               	.L43:
+ 244:networkcard/enc28j60.c **** 	enc28j60_read_buffer(buffer,len);
+ 725               	.LM84:
+ 726 009a C701      		movw r24,r14
+ 727 009c BE01      		movw r22,r28
+ 728 009e 0E94 0000 		call enc28j60_read_buffer
+ 249:networkcard/enc28j60.c **** 	if ((enc28j60_next_packet_ptr- 1 < ENC28J60_RX_BUFFER_START) || (enc28j60_next_packet_ptr- 1 > ENC
+ 730               	.LM85:
+ 731 00a2 6091 0000 		lds r22,enc28j60_next_packet_ptr
+ 732 00a6 7091 0000 		lds r23,enc28j60_next_packet_ptr+1
+ 733 00aa CB01      		movw r24,r22
+ 734 00ac 0197      		sbiw r24,1
+ 735 00ae 2AE1      		ldi r18,hi8(6656)
+ 736 00b0 8030      		cpi r24,lo8(6656)
+ 737 00b2 9207      		cpc r25,r18
+ 738 00b4 00F0      		brlo .L44
+ 250:networkcard/enc28j60.c **** 		enc28j60_write_address(ENC28J60_REG_ERXRDPTL, LO8(ENC28J60_RX_BUFFER_END));
+ 740               	.LM86:
+ 741 00b6 8CE0      		ldi r24,lo8(12)
+ 742 00b8 6FEF      		ldi r22,lo8(-1)
+ 743 00ba 0E94 0000 		call enc28j60_write_address
+ 251:networkcard/enc28j60.c **** 		enc28j60_write_address(ENC28J60_REG_ERXRDPTH, HI8(ENC28J60_RX_BUFFER_END));
+ 745               	.LM87:
+ 746 00be 8DE0      		ldi r24,lo8(13)
+ 747 00c0 69E1      		ldi r22,lo8(25)
+ 748 00c2 00C0      		rjmp .L47
+ 749               	.L44:
+ 253:networkcard/enc28j60.c **** 		enc28j60_write_address(ENC28J60_REG_ERXRDPTL, LO8(enc28j60_next_packet_ptr- 1));
+ 751               	.LM88:
+ 752 00c4 6150      		subi r22,lo8(-(-1))
+ 753 00c6 8CE0      		ldi r24,lo8(12)
+ 754 00c8 0E94 0000 		call enc28j60_write_address
+ 254:networkcard/enc28j60.c **** 		enc28j60_write_address(ENC28J60_REG_ERXRDPTH, HI8(enc28j60_next_packet_ptr- 1));
+ 756               	.LM89:
+ 757 00cc 2091 0000 		lds r18,enc28j60_next_packet_ptr
+ 758 00d0 3091 0000 		lds r19,enc28j60_next_packet_ptr+1
+ 759 00d4 2150      		subi r18,lo8(-(-1))
+ 760 00d6 3040      		sbci r19,hi8(-(-1))
+ 761 00d8 8DE0      		ldi r24,lo8(13)
+ 762 00da 632F      		mov r22,r19
+ 763               	.L47:
+ 764 00dc 0E94 0000 		call enc28j60_write_address
+ 258:networkcard/enc28j60.c **** 	enc28j60_spi_write_word(ENC28J60_OP_BFS|ENC28J60_REG_ECON2, (1<<ENC28J60_BIT_PKTDEC));
+ 766               	.LM90:
+ 767 00e0 8EE9      		ldi r24,lo8(-98)
+ 768 00e2 60E4      		ldi r22,lo8(64)
+ 769 00e4 0E94 0000 		call enc28j60_spi_write_word
+ 260:networkcard/enc28j60.c **** 	return len;
+ 771               	.LM91:
+ 772 00e8 00C0      		rjmp .L42
+ 773               	.L46:
+ 219:networkcard/enc28j60.c **** 			return 0;
+ 775               	.LM92:
+ 776 00ea C0E0      		ldi r28,lo8(0)
+ 777 00ec D0E0      		ldi r29,hi8(0)
+ 778               	.L42:
+ 261:networkcard/enc28j60.c **** }
+ 780               	.LM93:
+ 781 00ee CE01      		movw r24,r28
+ 782               	/* epilogue start */
+ 783 00f0 DF91      		pop r29
+ 784 00f2 CF91      		pop r28
+ 785 00f4 1F91      		pop r17
+ 786 00f6 0F91      		pop r16
+ 787 00f8 FF90      		pop r15
+ 788 00fa EF90      		pop r14
+ 789 00fc 0895      		ret
+ 791               	.Lscope9:
+ 793               		.stabd	78,0,0
+ 794               		.section	.text.enc28j60_send_packet,"ax",@progbits
+ 798               	.global	enc28j60_send_packet
+ 800               	enc28j60_send_packet:
+ 801               		.stabd	46,0,0
+ 170:networkcard/enc28j60.c **** {
+ 803               	.LM94:
+ 804               	.LFBB10:
+ 805 0000 EF92      		push r14
+ 806 0002 FF92      		push r15
+ 807 0004 0F93      		push r16
+ 808 0006 1F93      		push r17
+ 809 0008 CF93      		push r28
+ 810 000a DF93      		push r29
+ 811               	/* prologue: function */
+ 812               	/* frame size = 0 */
+ 813               	/* stack size = 6 */
+ 814               	.L__stack_usage = 6
+ 815 000c EC01      		movw r28,r24
+ 816 000e 8B01      		movw r16,r22
+ 170:networkcard/enc28j60.c **** {
+ 818               	.LM95:
+ 819 0010 82E3      		ldi r24,lo8(50)
+ 820 0012 E82E      		mov r14,r24
+ 821 0014 F12C      		mov r15,__zero_reg__
+ 822               	.L50:
+ 175:networkcard/enc28j60.c **** 		if (!(enc28j60_read_address(ENC28J60_REG_ECON1) & (1<<ENC28J60_BIT_TXRTS))){
+ 824               	.LM96:
+ 825 0016 8FE1      		ldi r24,lo8(31)
+ 826 0018 0E94 0000 		call enc28j60_read_address
+ 827 001c 83FF      		sbrs r24,3
+ 828 001e 00C0      		rjmp .L49
+ 829               	.LBB4:
+ 830               	.LBB5:
+ 832               	.Ltext1:
+   1:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** /* Copyright (c) 2002, Marek Michalkiewicz
+   2:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    Copyright (c) 2004,2005,2007 Joerg Wunsch
+   3:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    Copyright (c) 2007  Florin-Viorel Petrov
+   4:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    All rights reserved.
+   5:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+   6:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    Redistribution and use in source and binary forms, with or without
+   7:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    modification, are permitted provided that the following conditions are met:
+   8:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+   9:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    * Redistributions of source code must retain the above copyright
+  10:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****      notice, this list of conditions and the following disclaimer.
+  11:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+  12:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    * Redistributions in binary form must reproduce the above copyright
+  13:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****      notice, this list of conditions and the following disclaimer in
+  14:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****      the documentation and/or other materials provided with the
+  15:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****      distribution.
+  16:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+  17:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    * Neither the name of the copyright holders nor the names of
+  18:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****      contributors may be used to endorse or promote products derived
+  19:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****      from this software without specific prior written permission.
+  20:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+  21:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  22:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  23:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+  24:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+  25:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+  26:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+  27:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+  28:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+  29:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+  30:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+  31:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****   POSSIBILITY OF SUCH DAMAGE. */
+  32:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+  33:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** /* $Id: delay.h.in 2189 2010-10-13 09:39:34Z aboyapati $ */
+  34:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+  35:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** #ifndef _UTIL_DELAY_H_
+  36:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** #define _UTIL_DELAY_H_ 1
+  37:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+  38:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** #ifndef __HAS_DELAY_CYCLES
+  39:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** #define __HAS_DELAY_CYCLES 1
+  40:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** #endif
+  41:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+  42:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** #include <inttypes.h>
+  43:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** #include <util/delay_basic.h>
+  44:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** #include <math.h>
+  45:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+  46:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** /** \file */
+  47:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** /** \defgroup util_delay <util/delay.h>: Convenience functions for busy-wait delay loops
+  48:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     \code
+  49:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     #define F_CPU 1000000UL  // 1 MHz
+  50:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     //#define F_CPU 14.7456E6
+  51:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     #include <util/delay.h>
+  52:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     \endcode
+  53:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+  54:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     \note As an alternative method, it is possible to pass the
+  55:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     F_CPU macro down to the compiler from the Makefile.
+  56:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     Obviously, in that case, no \c \#define statement should be
+  57:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     used.
+  58:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+  59:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     The functions in this header file are wrappers around the basic
+  60:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     busy-wait functions from <util/delay_basic.h>.  They are meant as
+  61:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     convenience functions where actual time values can be specified
+  62:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     rather than a number of cycles to wait for.  The idea behind is
+  63:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     that compile-time constant expressions will be eliminated by
+  64:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     compiler optimization so floating-point expressions can be used
+  65:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     to calculate the number of delay cycles needed based on the CPU
+  66:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     frequency passed by the macro F_CPU.
+  67:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+  68:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     \note In order for these functions to work as intended, compiler
+  69:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     optimizations <em>must</em> be enabled, and the delay time
+  70:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     <em>must</em> be an expression that is a known constant at
+  71:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     compile-time.  If these requirements are not met, the resulting
+  72:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     delay will be much longer (and basically unpredictable), and
+  73:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     applications that otherwise do not use floating-point calculations
+  74:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     will experience severe code bloat by the floating-point library
+  75:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     routines linked into the application.
+  76:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+  77:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     The functions available allow the specification of microsecond, and
+  78:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     millisecond delays directly, using the application-supplied macro
+  79:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     F_CPU as the CPU clock frequency (in Hertz).
+  80:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+  81:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** */
+  82:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+  83:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** #if !defined(__DOXYGEN__)
+  84:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** static inline void _delay_us(double __us) __attribute__((always_inline));
+  85:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** static inline void _delay_ms(double __ms) __attribute__((always_inline));
+  86:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** #endif
+  87:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+  88:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** #ifndef F_CPU
+  89:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** /* prevent compiler error by supplying a default */
+  90:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** # warning "F_CPU not defined for <util/delay.h>"
+  91:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** # define F_CPU 1000000UL
+  92:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** #endif
+  93:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+  94:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** #ifndef __OPTIMIZE__
+  95:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** # warning "Compiler optimizations disabled; functions from <util/delay.h> won't work as designed"
+  96:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** #endif
+  97:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+  98:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** /**
+  99:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    \ingroup util_delay
+ 100:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+ 101:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    Perform a delay of \c __ms milliseconds, using _delay_loop_2().
+ 102:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+ 103:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    The macro F_CPU is supposed to be defined to a
+ 104:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    constant defining the CPU clock frequency (in Hertz).
+ 105:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+ 106:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    The maximal possible delay is 262.14 ms / F_CPU in MHz.
+ 107:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+ 108:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    When the user request delay which exceed the maximum possible one,
+ 109:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    _delay_ms() provides a decreased resolution functionality. In this
+ 110:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    mode _delay_ms() will work with a resolution of 1/10 ms, providing
+ 111:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    delays up to 6.5535 seconds (independent from CPU frequency).  The
+ 112:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    user will not be informed about decreased resolution.
+ 113:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+ 114:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    If the avr-gcc toolchain has __builtin_avr_delay_cycles(unsigned long)
+ 115:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    support, maximal possible delay is 4294967.295 ms/ F_CPU in MHz. For
+ 116:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    values greater than the maximal possible delay, overflows results in
+ 117:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    no delay i.e., 0ms.
+ 118:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+ 119:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    Conversion of __us into clock cycles may not always result in integer.
+ 120:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    By default, the clock cycles rounded up to next integer. This ensures that
+ 121:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    the user gets atleast __us microseconds of delay.
+ 122:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+ 123:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    Alternatively, user can define __DELAY_ROUND_DOWN__ and __DELAY_ROUND_CLOSEST__
+ 124:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    to round down and round to closest integer.
+ 125:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+ 126:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    Note: The new implementation of _delay_ms(double __ms) with 
+ 127:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****     __builtin_avr_delay_cycles(unsigned long) support is not backward compatible. 
+ 128:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    User can define __DELAY_BACKWARD_COMPATIBLE__ to get a backward compatible delay
+ 129:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****    although this will be deprecated in future.
+ 130:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+ 131:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h ****  */
+ 132:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** void
+ 133:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** _delay_ms(double __ms)
+ 134:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** {
+ 135:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 	uint16_t __ticks;
+ 136:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 	double __tmp ; 
+ 137:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** #if __HAS_DELAY_CYCLES && defined(__OPTIMIZE__) && !defined(__DELAY_BACKWARD_COMPATIBLE__)
+ 138:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 	uint32_t __ticks_dc;
+ 139:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 	extern void __builtin_avr_delay_cycles(unsigned long);
+ 140:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 	__tmp = ((F_CPU) / 1e3) * __ms;
+ 141:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+ 142:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 	#if defined(__DELAY_ROUND_DOWN__)
+ 143:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 		__ticks_dc = (uint32_t)fabs(__tmp);
+ 144:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+ 145:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 	#elif defined(__DELAY_ROUND_CLOSEST__)
+ 146:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 		__ticks_dc = (uint32_t)(fabs(__tmp)+0.5);
+ 147:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+ 148:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 	#else
+ 149:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 		//round up by default
+ 150:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 		__ticks_dc = (uint32_t)(ceil(fabs(__tmp)));
+ 151:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 	#endif
+ 152:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 
+ 153:/usr/lib/gcc/avr/4.5.3/../../../avr/include/util/delay.h **** 	__builtin_avr_delay_cycles(__ticks_dc);
+ 834               	.LM97:
+ 835 0020 8FE9      		 ldi r24,lo8(3999)
+ 836 0022 9FE0      	    ldi r25,hi8(3999)
+ 837 0024 0197      	    1:sbiw r24,1
+ 838 0026 01F4      	    brne 1b
+ 839 0028 00C0      		rjmp .
+ 840 002a 0000      		nop
+ 841 002c 0894      		sec
+ 842 002e E108      		sbc r14,__zero_reg__
+ 843 0030 F108      		sbc r15,__zero_reg__
+ 844               	.LBE5:
+ 845               	.LBE4:
+ 847               	.Ltext2:
+ 174:networkcard/enc28j60.c **** 	for(tmp=0; tmp<50; tmp++){
+ 849               	.LM98:
+ 850 0032 E114      		cp r14,__zero_reg__
+ 851 0034 F104      		cpc r15,__zero_reg__
+ 852 0036 01F4      		brne .L50
+ 853               	.L49:
+ 186:networkcard/enc28j60.c **** 	enc28j60_write_address(ENC28J60_REG_EWRPTL, (ENC28J60_TX_BUFFER_START&0xFF));
+ 855               	.LM99:
+ 856 0038 82E0      		ldi r24,lo8(2)
+ 857 003a 60E0      		ldi r22,lo8(0)
+ 858 003c 0E94 0000 		call enc28j60_write_address
+ 187:networkcard/enc28j60.c **** 	enc28j60_write_address(ENC28J60_REG_EWRPTH, (ENC28J60_TX_BUFFER_START)>>8);
+ 860               	.LM100:
+ 861 0040 83E0      		ldi r24,lo8(3)
+ 862 0042 6AE1      		ldi r22,lo8(26)
+ 863 0044 0E94 0000 		call enc28j60_write_address
+ 190:networkcard/enc28j60.c **** 	enc28j60_write_address(ENC28J60_REG_ETXNDL, (ENC28J60_TX_BUFFER_START+len)&0xFF);
+ 865               	.LM101:
+ 866 0048 86E0      		ldi r24,lo8(6)
+ 867 004a 6C2F      		mov r22,r28
+ 868 004c 0E94 0000 		call enc28j60_write_address
+ 191:networkcard/enc28j60.c **** 	enc28j60_write_address(ENC28J60_REG_ETXNDH, (ENC28J60_TX_BUFFER_START+len)>>8);
+ 870               	.LM102:
+ 871 0050 9E01      		movw r18,r28
+ 872 0052 2050      		subi r18,lo8(-(6656))
+ 873 0054 364E      		sbci r19,hi8(-(6656))
+ 874 0056 87E0      		ldi r24,lo8(7)
+ 875 0058 632F      		mov r22,r19
+ 876 005a 0E94 0000 		call enc28j60_write_address
+ 194:networkcard/enc28j60.c **** 	enc28j60_spi_write_word(ENC28J60_OP_WRITE_BUF_MEM, 0x00);
+ 878               	.LM103:
+ 879 005e 8AE7      		ldi r24,lo8(122)
+ 880 0060 60E0      		ldi r22,lo8(0)
+ 881 0062 0E94 0000 		call enc28j60_spi_write_word
+ 197:networkcard/enc28j60.c **** 	enc28j60_write_buffer(buffer, len);
+ 883               	.LM104:
+ 884 0066 C801      		movw r24,r16
+ 885 0068 BE01      		movw r22,r28
+ 886 006a 0E94 0000 		call enc28j60_write_buffer
+ 201:networkcard/enc28j60.c **** 	enc28j60_spi_write_word(ENC28J60_OP_BFS | ENC28J60_REG_ECON1, (1<<ENC28J60_BIT_TXRST));
+ 888               	.LM105:
+ 889 006e 8FE9      		ldi r24,lo8(-97)
+ 890 0070 60E8      		ldi r22,lo8(-128)
+ 891 0072 0E94 0000 		call enc28j60_spi_write_word
+ 202:networkcard/enc28j60.c **** 	enc28j60_spi_write_word(ENC28J60_OP_BFC | ENC28J60_REG_ECON1, (1<<ENC28J60_BIT_TXRST));
+ 893               	.LM106:
+ 894 0076 8FEB      		ldi r24,lo8(-65)
+ 895 0078 60E8      		ldi r22,lo8(-128)
+ 896 007a 0E94 0000 		call enc28j60_spi_write_word
+ 205:networkcard/enc28j60.c **** 	enc28j60_spi_write_word(ENC28J60_OP_BFS | ENC28J60_REG_ECON1, (1<<ENC28J60_BIT_TXRTS)|(1<<ENC28J60
+ 898               	.LM107:
+ 899 007e 8FE9      		ldi r24,lo8(-97)
+ 900 0080 6CE0      		ldi r22,lo8(12)
+ 901 0082 0E94 0000 		call enc28j60_spi_write_word
+ 902               	/* epilogue start */
+ 206:networkcard/enc28j60.c **** }
+ 904               	.LM108:
+ 905 0086 DF91      		pop r29
+ 906 0088 CF91      		pop r28
+ 907 008a 1F91      		pop r17
+ 908 008c 0F91      		pop r16
+ 909 008e FF90      		pop r15
+ 910 0090 EF90      		pop r14
+ 911 0092 0895      		ret
+ 913               	.Lscope10:
+ 915               		.stabd	78,0,0
+ 916               		.section	.text.enc28j60_init,"ax",@progbits
+ 918               	.global	enc28j60_init
+ 920               	enc28j60_init:
+ 921               		.stabd	46,0,0
+  94:networkcard/enc28j60.c **** {
+ 923               	.LM109:
+ 924               	.LFBB11:
+ 925 0000 0F93      		push r16
+ 926 0002 1F93      		push r17
+ 927 0004 CF93      		push r28
+ 928 0006 DF93      		push r29
+ 929               	/* prologue: function */
+ 930               	/* frame size = 0 */
+ 931               	/* stack size = 4 */
+ 932               	.L__stack_usage = 4
+  99:networkcard/enc28j60.c **** 	enc28j60_current_bank = 0xFF;
+ 934               	.LM110:
+ 935 0008 8FEF      		ldi r24,lo8(-1)
+ 936 000a 8093 0000 		sts enc28j60_current_bank,r24
+ 102:networkcard/enc28j60.c **** 	ENC28J60_DDR |= (1<<ENC28J60_PIN_CS);
+ 938               	.LM111:
+ 939 000e 249A      		sbi 36-32,4
+ 105:networkcard/enc28j60.c **** 	ENC28J60_CS_HI();
+ 941               	.LM112:
+ 942 0010 2C9A      		sbi 37-32,4
+ 109:networkcard/enc28j60.c **** 	PORTB |= (1<<ENC28J60_PIN_SCK); //sck = hi
+ 944               	.LM113:
+ 945 0012 2F9A      		sbi 37-32,7
+ 112:networkcard/enc28j60.c **** 	DDRB |= (1<<ENC28J60_PIN_SS)|(1<<ENC28J60_PIN_CS)|(1<<ENC28J60_PIN_MOSI)|(1<<ENC28J60_PIN_SCK); //
+ 947               	.LM114:
+ 948 0014 84B1      		in r24,36-32
+ 949 0016 806B      		ori r24,lo8(-80)
+ 950 0018 84B9      		out 36-32,r24
+ 113:networkcard/enc28j60.c **** 	DDRB &= ~(1<<ENC28J60_PIN_MISO); //MISO = IN
+ 952               	.LM115:
+ 953 001a 2698      		cbi 36-32,6
+ 121:networkcard/enc28j60.c **** 	SPCR = (0<<SPIE)|(1<<SPE)|(0<<DORD)|(1<<MSTR)|(0<<CPOL)|(0<<CPHA)|(0<<SPR1)|(0<<SPR0);
+ 955               	.LM116:
+ 956 001c 80E5      		ldi r24,lo8(80)
+ 957 001e 8CBD      		out 76-32,r24
+ 123:networkcard/enc28j60.c **** 	SPSR = (1<<SPI2X);
+ 959               	.LM117:
+ 960 0020 81E0      		ldi r24,lo8(1)
+ 961 0022 8DBD      		out 77-32,r24
+ 962 0024 80E4      		ldi r24,lo8(200000)
+ 963 0026 9DE0      		ldi r25,hi8(200000)
+ 964 0028 A3E0      		ldi r26,hlo8(200000)
+ 965 002a B0E0      		ldi r27,hhi8(200000)
+ 966               	.L53:
+ 967               	.LBB6:
+ 125:networkcard/enc28j60.c **** 	delay(200000);
+ 969               	.LM118:
+ 970               	/* #APP */
+ 971               	 ;  125 "networkcard/enc28j60.c" 1
+ 972 002c 0000      		nop
+ 973               	 ;  0 "" 2
+ 974               	/* #NOAPP */
+ 975 002e 0197      		sbiw r24,1
+ 976 0030 A109      		sbc r26,__zero_reg__
+ 977 0032 B109      		sbc r27,__zero_reg__
+ 978 0034 01F4      		brne .L53
+ 979               	.LBE6:
+ 126:networkcard/enc28j60.c **** 	enc28j60_spi_write_word (ENC28J60_SOFT_RESET, ENC28J60_SOFT_RESET);
+ 981               	.LM119:
+ 982 0036 8FEF      		ldi r24,lo8(-1)
+ 983 0038 6FEF      		ldi r22,lo8(-1)
+ 984 003a 0E94 0000 		call enc28j60_spi_write_word
+ 985 003e 80E4      		ldi r24,lo8(200000)
+ 986 0040 9DE0      		ldi r25,hi8(200000)
+ 987 0042 A3E0      		ldi r26,hlo8(200000)
+ 988 0044 B0E0      		ldi r27,hhi8(200000)
+ 989               	.L54:
+ 990               	.LBB7:
+ 128:networkcard/enc28j60.c **** 	delay(200000);
+ 992               	.LM120:
+ 993               	/* #APP */
+ 994               	 ;  128 "networkcard/enc28j60.c" 1
+ 995 0046 0000      		nop
+ 996               	 ;  0 "" 2
+ 997               	/* #NOAPP */
+ 998 0048 0197      		sbiw r24,1
+ 999 004a A109      		sbc r26,__zero_reg__
+ 1000 004c B109      		sbc r27,__zero_reg__
+ 1001 004e 01F4      		brne .L54
+ 128:networkcard/enc28j60.c **** 	delay(200000);
+ 1003               	.LM121:
+ 1004 0050 C0E0      		ldi r28,lo8(0)
+ 1005 0052 D0E0      		ldi r29,hi8(0)
+ 1006 0054 00C0      		rjmp .L55
+ 1007               	.L57:
+ 1008               	.LBE7:
+ 131:networkcard/enc28j60.c **** 	while((!(enc28j60_read_address(ENC28J60_REG_ESTAT) & 0x01)) && (timeout<65000)){timeout++;};
+ 1010               	.LM122:
+ 1011 0056 2196      		adiw r28,1
+ 1012               	.L55:
+ 1013 0058 8DE1      		ldi r24,lo8(29)
+ 1014 005a 0E94 0000 		call enc28j60_read_address
+ 1015 005e 80FD      		sbrc r24,0
+ 1016 0060 00C0      		rjmp .L56
+ 131:networkcard/enc28j60.c **** 	while((!(enc28j60_read_address(ENC28J60_REG_ESTAT) & 0x01)) && (timeout<65000)){timeout++;};
+ 1018               	.LM123:
+ 1019 0062 8DEF      		ldi r24,hi8(-536)
+ 1020 0064 C83E      		cpi r28,lo8(-536)
+ 1021 0066 D807      		cpc r29,r24
+ 1022 0068 01F4      		brne .L57
+ 1023               	.L56:
+ 135:networkcard/enc28j60.c **** 	enc28j60_next_packet_ptr = ENC28J60_RX_BUFFER_START;
+ 1025               	.LM124:
+ 1026 006a 1092 0000 		sts enc28j60_next_packet_ptr+1,__zero_reg__
+ 1027 006e 1092 0000 		sts enc28j60_next_packet_ptr,__zero_reg__
+ 1028 0072 C0E0      		ldi r28,lo8(enc28j60_config)
+ 1029 0074 D0E0      		ldi r29,hi8(enc28j60_config)
+ 1030               	.L58:
+ 140:networkcard/enc28j60.c **** 		enc28j60_write_address(enc28j60_config[i+0], enc28j60_config[i+1]);
+ 1032               	.LM125:
+ 1033 0076 8881      		ld r24,Y
+ 1034 0078 6981      		ldd r22,Y+1
+ 1035 007a 0E94 0000 		call enc28j60_write_address
+ 1036 007e 2296      		adiw r28,2
+ 139:networkcard/enc28j60.c **** 	for(i=0; i<2*16; i+=2){
+ 1038               	.LM126:
+ 1039 0080 E0E0      		ldi r30,hi8(enc28j60_config+32)
+ 1040 0082 C030      		cpi r28,lo8(enc28j60_config+32)
+ 1041 0084 DE07      		cpc r29,r30
+ 1042 0086 01F4      		brne .L58
+ 139:networkcard/enc28j60.c **** 	for(i=0; i<2*16; i+=2){
+ 1044               	.LM127:
+ 1045 0088 C0E0      		ldi r28,lo8(enc28j60_macaddr)
+ 1046 008a D0E0      		ldi r29,hi8(enc28j60_macaddr)
+ 1047 008c 00E0      		ldi r16,lo8(mymac)
+ 1048 008e 10E0      		ldi r17,hi8(mymac)
+ 1049               	.L59:
+ 145:networkcard/enc28j60.c **** 		enc28j60_write_address(enc28j60_macaddr[i], mymac[i]);
+ 1051               	.LM128:
+ 1052 0090 F801      		movw r30,r16
+ 1053 0092 6191      		ld r22,Z+
+ 1054 0094 8F01      		movw r16,r30
+ 1055 0096 8991      		ld r24,Y+
+ 1056 0098 0E94 0000 		call enc28j60_write_address
+ 144:networkcard/enc28j60.c **** 	for (i=0; i<6; i++) {
+ 1058               	.LM129:
+ 1059 009c F0E0      		ldi r31,hi8(enc28j60_macaddr+6)
+ 1060 009e C030      		cpi r28,lo8(enc28j60_macaddr+6)
+ 1061 00a0 DF07      		cpc r29,r31
+ 1062 00a2 01F4      		brne .L59
+ 149:networkcard/enc28j60.c **** 	enc28j60_write_phy(ENC28J60_PHY_PHCON2, (1<<ENC28J60_BIT_HDLDIS)); //=no loopback of transmitted f
+ 1064               	.LM130:
+ 1065 00a4 80E1      		ldi r24,lo8(16)
+ 1066 00a6 60E0      		ldi r22,lo8(256)
+ 1067 00a8 71E0      		ldi r23,hi8(256)
+ 1068 00aa 0E94 0000 		call enc28j60_write_phy
+ 152:networkcard/enc28j60.c **** 	enc28j60_write_address(ENC28J60_REG_EIE, (1<<ENC28J60_EIE_INTIE)|(1<<ENC28J60_EIE_PKTIE));
+ 1070               	.LM131:
+ 1071 00ae 8BE1      		ldi r24,lo8(27)
+ 1072 00b0 60EC      		ldi r22,lo8(-64)
+ 1073 00b2 0E94 0000 		call enc28j60_write_address
+ 156:networkcard/enc28j60.c **** 	enc28j60_spi_write_word(ENC28J60_OP_BFS|ENC28J60_REG_ECON1, (1<<ENC28J60_BIT_RXEN));
+ 1075               	.LM132:
+ 1076 00b6 8FE9      		ldi r24,lo8(-97)
+ 1077 00b8 64E0      		ldi r22,lo8(4)
+ 1078 00ba 0E94 0000 		call enc28j60_spi_write_word
+ 159:networkcard/enc28j60.c **** 	enc28j60_write_phy(ENC28J60_PHY_PHLCON, 0x347A); //cave: Table3-3: reset value is 0x3422, do not m
+ 1080               	.LM133:
+ 1081 00be 84E1      		ldi r24,lo8(20)
+ 1082 00c0 6AE7      		ldi r22,lo8(13434)
+ 1083 00c2 74E3      		ldi r23,hi8(13434)
+ 1084 00c4 0E94 0000 		call enc28j60_write_phy
+ 1085               	/* epilogue start */
+ 167:networkcard/enc28j60.c **** }
+ 1087               	.LM134:
+ 1088 00c8 DF91      		pop r29
+ 1089 00ca CF91      		pop r28
+ 1090 00cc 1F91      		pop r17
+ 1091 00ce 0F91      		pop r16
+ 1092 00d0 0895      		ret
+ 1097               	.Lscope11:
+ 1099               		.stabd	78,0,0
+ 1100               	.global	mymac
+ 1101               		.data
+ 1104               	mymac:
+ 1105 0000 00        		.byte	0
+ 1106 0001 22        		.byte	34
+ 1107 0002 F9        		.byte	-7
+ 1108 0003 01        		.byte	1
+ 1109 0004 0C        		.byte	12
+ 1110 0005 65        		.byte	101
+ 1111               	.global	enc28j60_config
+ 1114               	enc28j60_config:
+ 1115 0006 04        		.byte	4
+ 1116 0007 00        		.byte	0
+ 1117 0008 05        		.byte	5
+ 1118 0009 1A        		.byte	26
+ 1119 000a 06        		.byte	6
+ 1120 000b FF        		.byte	-1
+ 1121 000c 07        		.byte	7
+ 1122 000d 1F        		.byte	31
+ 1123 000e 08        		.byte	8
+ 1124 000f 00        		.byte	0
+ 1125 0010 09        		.byte	9
+ 1126 0011 00        		.byte	0
+ 1127 0012 0A        		.byte	10
+ 1128 0013 FF        		.byte	-1
+ 1129 0014 0B        		.byte	11
+ 1130 0015 19        		.byte	25
+ 1131 0016 C1        		.byte	-63
+ 1132 0017 00        		.byte	0
+ 1133 0018 C0        		.byte	-64
+ 1134 0019 0D        		.byte	13
+ 1135 001a C2        		.byte	-62
+ 1136 001b 32        		.byte	50
+ 1137 001c CA        		.byte	-54
+ 1138 001d EE        		.byte	-18
+ 1139 001e CB        		.byte	-53
+ 1140 001f 05        		.byte	5
+ 1141 0020 C4        		.byte	-60
+ 1142 0021 12        		.byte	18
+ 1143 0022 C6        		.byte	-58
+ 1144 0023 12        		.byte	18
+ 1145 0024 C7        		.byte	-57
+ 1146 0025 0C        		.byte	12
+ 1147               	.global	enc28j60_macaddr
+ 1150               	enc28j60_macaddr:
+ 1151 0026 E4        		.byte	-28
+ 1152 0027 E5        		.byte	-27
+ 1153 0028 E2        		.byte	-30
+ 1154 0029 E3        		.byte	-29
+ 1155 002a E0        		.byte	-32
+ 1156 002b E1        		.byte	-31
+ 1157               		.comm myip,4,1
+ 1158               		.comm IP_id_counter,2,1
+ 1159               		.comm eth_buffer,1201,1
+ 1160               		.comm eth_len,2,1
+ 1161               		.comm arp_entry,50,1
+ 1162               		.comm enc28j60_current_bank,1,1
+ 1163               		.comm enc28j60_next_packet_ptr,2,1
+ 1174               		.text
+ 1176               	.Letext0:
+ 1177               	.global __do_copy_data
+ 1178               	.global __do_clear_bss
+DEFINED SYMBOLS
+                            *ABS*:00000000 enc28j60.c
+     /tmp/cctNdmJb.s:2      *ABS*:0000003f __SREG__
+     /tmp/cctNdmJb.s:3      *ABS*:0000003e __SP_H__
+     /tmp/cctNdmJb.s:4      *ABS*:0000003d __SP_L__
+     /tmp/cctNdmJb.s:5      *ABS*:00000034 __CCP__
+     /tmp/cctNdmJb.s:6      *ABS*:00000000 __tmp_reg__
+     /tmp/cctNdmJb.s:7      *ABS*:00000001 __zero_reg__
+     /tmp/cctNdmJb.s:122    .text.enc28j60_read_buffer:00000000 enc28j60_read_buffer
+     /tmp/cctNdmJb.s:185    .text.enc28j60_write_buffer:00000000 enc28j60_write_buffer
+     /tmp/cctNdmJb.s:245    .text.enc28j60_spi_read_byte:00000000 enc28j60_spi_read_byte
+     /tmp/cctNdmJb.s:315    .text.enc28j60_spi_write_word:00000000 enc28j60_spi_write_word
+     /tmp/cctNdmJb.s:362    .text.enc28j60_write_address:00000000 enc28j60_write_address
+                            *COM*:00000001 enc28j60_current_bank
+     /tmp/cctNdmJb.s:435    .text.enc28j60_read_address:00000000 enc28j60_read_address
+     /tmp/cctNdmJb.s:505    .text.enc28j60_write_phy:00000000 enc28j60_write_phy
+     /tmp/cctNdmJb.s:563    .text.enc28j60_read_phy:00000000 enc28j60_read_phy
+     /tmp/cctNdmJb.s:632    .text.enc28j60_receive_packet:00000000 enc28j60_receive_packet
+                            *COM*:00000002 enc28j60_next_packet_ptr
+     /tmp/cctNdmJb.s:800    .text.enc28j60_send_packet:00000000 enc28j60_send_packet
+     /tmp/cctNdmJb.s:920    .text.enc28j60_init:00000000 enc28j60_init
+     /tmp/cctNdmJb.s:1114   .data:00000006 enc28j60_config
+     /tmp/cctNdmJb.s:1150   .data:00000026 enc28j60_macaddr
+     /tmp/cctNdmJb.s:1104   .data:00000000 mymac
+                            *COM*:00000004 myip
+                            *COM*:00000002 IP_id_counter
+                            *COM*:000004b1 eth_buffer
+                            *COM*:00000002 eth_len
+                            *COM*:00000032 arp_entry
+
+UNDEFINED SYMBOLS
+__do_copy_data
+__do_clear_bss
